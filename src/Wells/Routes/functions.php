@@ -4,6 +4,63 @@
  * @subpackage functions
  */
 
+function reflect_func_params( ReflectionFunctionAbstract $reflection, array $params ){
+	
+	$ordered = array();
+	$parameters = array();
+	
+	foreach( $reflection->getParameters() as $_param )
+		$ordered[ $_param->getPosition() ] = $_param;
+	
+	ksort($ordered);
+	
+	foreach( $ordered as $rParam ){
+		
+		$name = $rParam->getName();
+		
+		if ( isset($params[ $name ]) ){
+			$parameters[ $name ] = $params[ $name ];
+		} elseif ( $rParam->isDefaultValueAvailable() ){
+			$parameters[ $name ] = $rParam->getDefaultValue();
+		} else {
+			throw new MissingParamException($name);
+		}
+	}
+	
+	return $parameters;
+}
+
+function invoke_closure(Closure $closure, $params = array()){
+    	
+    // treat as a function; cf. https://bugs.php.net/bug.php?id=65432
+    $reflect = new ReflectionFunction($closure);
+    
+    // sequential arguments when invoking
+    $args = array();
+    
+    // match params with arguments
+    foreach ($reflect->getParameters() as $i => $param) {
+        if (isset($params[$param->name])) {
+            // a named param value is available
+            $args[] = $params[$param->name];
+        } elseif (isset($params[$i])) {
+            // a positional param value is available
+            $args[] = $params[$i];
+        } elseif ($param->isDefaultValueAvailable()) {
+            // use the default value
+            $args[] = $param->getDefaultValue();
+        } else {
+            // no default value and no matching param
+            $message = "Closure($i : \${$param->name})";
+            throw new MissingParamException($message);
+        }
+    }
+    
+	return $reflect->invokeArgs($args);
+}
+
+class MissingParamException extends ReflectionException {}
+
 /**
  * Register an array of routes.
  * 
@@ -24,14 +81,14 @@ function register_routes( array $routes, $priority = 10, array $query_vars = nul
  * Register a RouteController instance.
  */
 function register_controller( Wells\Routes\Controller $object ){
-	Registry::addToGroup( 'controller', $object );
+	Wells\Util\Registry::addToGroup( 'controller', $object );
 }
 
 /**
  * Returns a registered RouteController instance.
  */
 function get_controller( $class ){
-	return Registry::getFromGroup( 'controller', $class );
+	return Wells\Util\Registry::getFromGroup( 'controller', $class );
 }
 
 /**
@@ -106,13 +163,13 @@ function parse_route( $route ){
 }
 
 /**
- * Builds a URL given a route URI and array of corresponding vars.
+ * Builds a URI given a route URI and array of corresponding vars.
  * 
  * @param string|array $uri URI route string, or the array returned from parse_route()
  * @param array|null $vars The route parameters to inject into the returned URL.
  * @return string The URL to the given route with params replaced.
  */
-function build_route_url( $uri, array $vars = null ){
+function build_route_uri( $uri, array $vars = null ){
 	
 	if ( is_array($uri) ){
 		$route_vars =& $uri;
@@ -135,5 +192,5 @@ function build_route_url( $uri, array $vars = null ){
 		}
 	}
 	
-	return BASEURL . $uri;
+	return $uri;
 }

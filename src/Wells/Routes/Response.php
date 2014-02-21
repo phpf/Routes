@@ -59,7 +59,7 @@ class Response {
 		}
 		
 		// Output the body
-		if ( ! $this->gzip || ! ob_start('ob_gzhandler') )
+		#if ( ! $this->gzip || ! ob_start('ob_gzhandler') )
 			ob_start();
 		
 		echo $this->body;

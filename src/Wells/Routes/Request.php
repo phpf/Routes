@@ -117,7 +117,7 @@ class Request {
 		
 		foreach( $vars as $var => $val ){
 			
-			$this->set( urldecode( $var ), kses_data( urldecode( $val ) ) );
+			$this->set( urldecode($var), htmlentities( strip_tags(urldecode($val)), ENT_COMPAT ) );
 		}
 	}
 		
@@ -279,7 +279,7 @@ class Request {
 	* Strips naughty text and slashes from uri components
 	*/
 	protected function filterUriComponent( $str ){
-		return trim( filter_nohtml_kses($str), '/' );	
+		return trim( htmlentities( strip_tags($str), ENT_COMPAT ), '/' );	
 	}
 	
 }

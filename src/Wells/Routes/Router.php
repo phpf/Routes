@@ -6,6 +6,9 @@
 
 namespace Wells\Routes;
 
+use ReflectionFunction;
+use ReflectionMethod;
+
 class Router {
 	
 	public $routeGroups = array();
@@ -30,13 +33,18 @@ class Router {
 	
 	protected static $_instance;
 	
-	public static function i( $request = null ){
-		if ( ! isset( self::$_instance ) )
-			self::$_instance = new self( $request );
+	public static function i(){
+		if ( ! isset(self::$_instance) )
+			self::$_instance = new self();
 		return self::$_instance;
 	}
 	
-	protected function __construct( Request $request ){
+	private function __construct(){}
+	
+	/**
+	 * Sets Request object.
+	 */
+	public function setRequest( Request $request ){
 		$this->request =& $request;
 	}	
 	
@@ -45,27 +53,22 @@ class Router {
 	*/
 	public function dispatch(){
 		
-		do_action( 'init_routes' );
-		
 		if ( $this->match() ){
 			
 			$response = Response::i();
 			
-			$response->init();	
+			$response->init();
 			
-			if ( isset($this->callbackClass) && is_string($this->callbackClass) ){
-				$controller = \Registry::getFromGroup('controller', $this->callbackClass);
-				$controller->setRequest($this->request);
-				$controller->setResponse($response);
-				$this->callback[0] = $controller;
-			}
+			$this->setupCallback( $this->request->route(), $response );
 			
 			call( $this->callback, $this->callbackParams );
 			
 			$response->send();
 		}
 		
-		send_404( 'Unknown route.' );
+		header($_SERVER['SERVER_PROTOCOL'] . ' Status', true, 404);
+		die('Unknown route.');
+		
 	}
 	
 	/**
@@ -113,7 +116,7 @@ class Router {
 			$keys = implode( '|', array_keys( $this->getQueryVars() ) );
 		return $keys;
 	}
-		
+
 	/**
 	* Adds a group of routes.
 	*
@@ -228,37 +231,35 @@ class Router {
 		
 		$http_method = $this->request->getHttpMethod();
 		
-		ksort( $this->routeGroups );
+		ksort($this->routeGroups);
 		
 		foreach( $this->routeGroups as $group ){
 				
 			foreach( $group as $Route ){
 				
-				if ( ! $Route->isHttpMethodAllowed( $http_method ) )
+				if ( ! $Route->isHttpMethodAllowed($http_method) )
 					continue;
 				
 				$nonregexed_uri = $Route->getUri();
 				
-				if ( cache_isset( $nonregexed_uri, 'route_uri_regex') ){
-					$route_uri = cache_get( $nonregexed_uri, 'route_uri_regex' );
+				if ( cache_isset($nonregexed_uri, 'route_uri_regex') ){
+					$route_uri = cache_get($nonregexed_uri, 'route_uri_regex');
 				} else {
 					// Replace route "variables" w/ regex
-					$route_uri = $this->regexRoute( $Route );
-					cache_set( $nonregexed_uri, $route_uri, 'route_uri_regex' );
+					$route_uri = $this->regexRoute($Route);
+					cache_set($nonregexed_uri, $route_uri, 'route_uri_regex');
 				}
 			
-				if ( preg_match( '#^/?' . $route_uri . '/?$#', $request_uri, $this->_matches['values'] ) ) {
+				if ( preg_match('#^/?' . $route_uri . '/?$#', $request_uri, $this->_matches['values']) ) {
 					
 					unset($this->_matches['values'][0]);
 					
-					$this->matches['keys'] = array_keys( $Route->getVars() );
+					$this->matches['keys'] = array_keys($Route->getVars());
 				
 					$this->matchedRoute[ $Route->uri ] = $route_uri; // just for debugging
 					
-					$this->request->setRoute( $Route );
+					$this->request->setRoute($Route);
 		
-					$this->setupCallback( $Route );
-					
 					return true;
 				}
 			}
@@ -279,50 +280,44 @@ class Router {
 		
 		foreach( $route->getVars() as $varname => $regex_key ){
 			
-			$route_uri = str_replace( ':' . $regex_key . '(' . $varname . ')', $this->getRegex( $regex_key ), $route_uri );
-			$route_uri = str_replace( ':' . $regex_key, $this->getRegex( $regex_key ), $route_uri );
+			$route_uri = str_replace( ':' . $regex_key . '(' . $varname . ')', $this->getRegex($regex_key), $route_uri );
+			$route_uri = str_replace( ':' . $regex_key, $this->getRegex($regex_key), $route_uri );
 		}
 		
 		return $route_uri;
 	}
 	
-	protected function setupCallback( Route $route ){
+	protected function setupCallback( Route $route, Response $response ){
 		
-		if ( ! empty( $this->matches['keys'] ) && ! empty( $this->matches['values'] ) ){
+		if ( ! empty($this->matches['keys']) && ! empty($this->matches['values']) ){
+			$query_vars = array_combine($this->matches['keys'], $this->matches['values']);
+			$this->request->setQueryVars($query_vars);
+		}
+		
+		$all_params = array_merge($this->request->getQueryVars(), $this->request->getParams());
+		
+		if ( is_array($route->callback) && isset($route->callback[1]) ){
 				
-			$query_vars = array_combine( $this->matches['keys'], $this->matches['values'] );
+			$reflection = new ReflectionMethod($route->callback[0], $route->callback[1]);
 			
-			$this->request->setQueryVars( $query_vars );
-		}
-		
-		$all_params = array_merge( $this->request->getQueryVars(), $this->request->getParams() );
-		
-		if ( is_array( $route->callback ) ){
-			$reflection = new \ReflectionMethod( $route->callback[0], $route->callback[1] );
-			$this->callbackClass = $route->callback[0];
-		} else {
-			$reflection = new \ReflectionFunction( $route->callback );
-		}
-		
-		$ordered_params = array();
-		$parameters = array();
-		
-		foreach( $reflection->getParameters() as $_param )
-			$ordered_params[ $_param->getPosition() ] = $_param;
-		
-		ksort( $ordered_params );
-		
-		foreach( $ordered_params as $cb_param ){
-			
-			$name = $cb_param->getName();
-			
-			if ( isset( $all_params[ $name ] ) ){
-				$parameters[ $name ] = $all_params[ $name ];
-			} elseif ( $cb_param->isDefaultValueAvailable() ){
-				$parameters[ $name ] = $cb_param->getDefaultValue();
-			} else {
-				return send_404( "Missing required route parameter '$name'." );
+			if ( is_string($route->callback[0]) && function_exists('get_controller') ){
+				$controller = get_controller($route->callback[0]);
+				$route->callback[0] = $controller;
 			}
+			
+			$route->callback[0]->attachObject($this->request, 'request');
+			$route->callback[0]->attachObject($response, 'response');
+			
+		} else {	
+			$reflection = new ReflectionFunction($route->callback);
+		}
+		
+		try {
+			$parameters = reflect_func_params($reflection, $all_params);
+		
+		} catch(\MissingParamException $e){
+		
+			die( 'Missing required route parameter.' );
 		}
 		
 		$this->callback = $route->callback;
