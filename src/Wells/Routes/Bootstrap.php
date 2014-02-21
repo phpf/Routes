@@ -3,8 +3,6 @@
  * @package Wells
  * @subpackage Routes
  */
- 
-Wells\Util\Autoloader::instance('Routes', __DIR__)->register();
 
 define('HTTP_GET', 'GET' );
 define('HTTP_POST', 'POST' );
