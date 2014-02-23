@@ -13,7 +13,7 @@
 	],
 	"require": {
 		"php": ">=5.3",
-		"phpf/util": "dev-master"
+		"phpf/util": "master"
 	},
 	"autoload": {
 		"psr-0": {
