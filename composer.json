@@ -1,0 +1,24 @@
+{
+	"name": "phpf/routes",
+	"type": "library",
+	"description": "Phpf Routes package",
+	"keywords": ["Routes", "Router", "HTTP", "Request"],
+	"homepage": "https://github.com/phpf/Routes",
+	"license": "MIT",
+	"authors": [
+		{
+			"name": "The PHPf Developer",
+			"email": "wellspeterson@live.com"
+		}
+	],
+	"require": {
+		"php": ">=5.3",
+		"phpf/util": "dev-master"
+	},
+	"autoload": {
+		"psr-0": {
+			"Phpf\\Routes\\": "src/"
+		}
+	},
+	"minimum-stability": "dev"
+}
