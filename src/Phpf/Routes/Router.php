@@ -288,16 +288,11 @@ class Router {
 			$this->request->setQueryVars($query_vars);
 		}
 		
-		$all_params = array_merge($this->request->getQueryVars(), $this->request->getParams());
+		$allParams = array_merge($this->request->getQueryVars(), $this->request->getParams());
 		
 		if ( is_array($route->callback) && isset($route->callback[1]) ){
 				
 			$reflection = new ReflectionMethod($route->callback[0], $route->callback[1]);
-			
-			if ( is_string($route->callback[0]) && function_exists('get_controller') ){
-				$controller = get_controller($route->callback[0]);
-				$route->callback[0] = $controller;
-			}
 			
 			$route->callback[0]->attachObject($this->request, 'request');
 			$route->callback[0]->attachObject($response, 'response');
@@ -306,16 +301,41 @@ class Router {
 			$reflection = new ReflectionFunction($route->callback);
 		}
 		
-		try {
-			$parameters = reflect_func_params($reflection, $all_params);
-		
-		} catch(\MissingParamException $e){
-		
+		if ( ! $params = $this->reflectParams($reflection, $allParams) ){
 			die( 'Missing required route parameter.' );
 		}
 		
 		$this->callback = $route->callback;
-		$this->callbackParams = $parameters;
+		$this->callbackParams = $params;
+	}
+
+	protected function reflectParams(\ReflectionFunctionAbstract $reflection, array $params){
+
+		$ordered = array();
+		$parameters = array();
+		$isClosure = '{closure}' === $reflection->getName();
+		
+		foreach( $reflection->getParameters() as $_param )
+			$ordered[ $_param->getPosition() ] = $_param;
+		
+		ksort($ordered);
+		
+		foreach( $ordered as $i => &$rParam ){
+			
+			$name = $rParam->getName();
+			
+			if ( isset($params[ $name ]) ){
+				$parameters[ $name ] = $params[ $name ];
+			} elseif ( $isClosure && isset($params[$i]) ){
+				$parameters[ $name ] = $params[ $i ];
+			} elseif ( $rParam->isDefaultValueAvailable() ){
+				$parameters[ $name ] = $rParam->getDefaultValue();
+			} else {
+				return false;
+			}
+		}
+		
+		return $parameters;
 	}
 	
 }

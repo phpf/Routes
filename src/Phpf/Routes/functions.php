@@ -1,36 +1,8 @@
 <?php
 /**
- * @package library.request
+ * @package Phpf.Routes
  * @subpackage functions
  */
-
-function reflect_func_params( ReflectionFunctionAbstract $reflection, array $params ){
-	
-	$ordered = array();
-	$parameters = array();
-	
-	foreach( $reflection->getParameters() as $_param )
-		$ordered[ $_param->getPosition() ] = $_param;
-	
-	ksort($ordered);
-	
-	foreach( $ordered as $rParam ){
-		
-		$name = $rParam->getName();
-		
-		if ( isset($params[ $name ]) ){
-			$parameters[ $name ] = $params[ $name ];
-		} elseif ( $rParam->isDefaultValueAvailable() ){
-			$parameters[ $name ] = $rParam->getDefaultValue();
-		} else {
-			throw new MissingParamException($name);
-		}
-	}
-	
-	return $parameters;
-}
-
-class MissingParamException extends ReflectionException {}
 
 /**
  * Register an array of routes.
