@@ -12,6 +12,8 @@ class Response {
 	
 	const DEFAULT_CONTENT_TYPE = 'text/html';
 	
+	protected $charset = 'UTF-8';
+	
 	protected $statusCode;
 	
 	protected $contentType;
@@ -136,6 +138,21 @@ class Response {
 		}
 		
 		return $this;
+	}
+	
+	/**
+	 * Sets output charset
+	 */
+	public function setCharset( $charset ){
+		$this->charset = $charset;
+		return $this;
+	}
+	
+	/**
+	 * Returns output charset
+	 */
+	public function getCharset(){
+		return $this->charset;
 	}
 	
 	/**
@@ -333,7 +350,7 @@ class Response {
 			$type = self::DEFAULT_CONTENT_TYPE;
 		}
 		
-		$charset = CHARSET;
+		$charset = $this->getCharset();
 		
 		return "Content-Type: $type; charset=$charset";
 	}
