@@ -13,11 +13,10 @@
  */
 function register_routes( array $routes, $priority = 10, array $query_vars = null ){
 	
-	if ( ! empty( $query_vars ) ){
+	if ( !empty($query_vars) )
 		Phpf\Routes\Router::i()->addQueryVars($query_vars);
-	}
 	
-	Phpf\Routes\Router::i()->addRoutes( $routes, $priority );
+	Phpf\Routes\Router::i()->addRoutes($routes, $priority);
 }
 
 /**
@@ -53,7 +52,7 @@ function current_route(){
  * @see Request\Router::get_routes_where()
  */
 function get_routes_where( array $args, $operator = 'AND', $keys_exist_only = false ){
-	return Phpf\Routes\Router::i()->getRoutesWhere( $args, $operator, $keys_exist_only );
+	return Phpf\Routes\Router::i()->getRoutesWhere($args, $operator, $keys_exist_only);
 }
 
 /**
@@ -63,24 +62,7 @@ function get_routes_where( array $args, $operator = 'AND', $keys_exist_only = fa
  * @return array Associative array of the route's parameters.
  */
 function parse_route( $route ){
-	
-	$route_vars = array();
-	
-	// Match query vars with renamings (e.g. ":id(post_id)") or without (e.g. ":year")
-	if ( preg_match_all('/:(\w+)+(\((\w+)\))?/', $route, $matches) && !empty($matches[3]) ){
-		
-		foreach( $matches[3] as $i => $var_name ){
-			// replace empty var names with regex key
-			if ( empty( $var_name ) ){
-				$matches[3][ $i ] = $matches[1][ $i ];	
-			}	
-		}
-		
-		// array of 'var key' => 'regex key'
-		$route_vars = array_combine( $matches[3], $matches[1] );
-	}
-	
-	return $route_vars;
+	return \Phpf\Routes\Route::parse($route);
 }
 
 /**
@@ -91,27 +73,5 @@ function parse_route( $route ){
  * @return string The URL to the given route with params replaced.
  */
 function build_route_uri( $uri, array $vars = null ){
-	
-	if ( is_array($uri) ){
-		$route_vars =& $uri;
-	} else {
-		$route_vars = parse_route( $uri );
-	}
-	
-	if ( ! empty( $route_vars ) ){
-			
-		foreach( $route_vars as $key => $regex ){
-			
-			if ( ! isset( $vars[ $key ] ) ){
-				trigger_error( "Cannot build route - missing required var '$key'." );
-				return null;
-			}
-		
-			$uri = str_replace( ':' . $regex . '(' . $key . ')', $vars[ $key ], $uri );
-			$uri = str_replace( ':' . $regex, $vars[ $key ], $uri );
-			$uri = str_replace( ':' . $key, $vars[ $key ], $uri );
-		}
-	}
-	
-	return $uri;
+	return \Phpf\Routes\Route::buildUri($uri, $vars);
 }

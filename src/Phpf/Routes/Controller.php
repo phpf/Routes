@@ -4,7 +4,7 @@
  * @subpackage Controller
  */
 
-namespace Wells\Routes;
+namespace Phpf\Routes;
  
 abstract class Controller {
 	

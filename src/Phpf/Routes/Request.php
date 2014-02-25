@@ -140,8 +140,8 @@ class Request {
 	*/
 	public function set( $var, $val ){
 		
-		if ( empty( $var ) || is_numeric( $var ) )
-			$this->setParam( null, $val );
+		if ( empty($var) || is_numeric($var) )
+			$this->setParam(null, $val);
 		else 
 			$this->$var = $val;
 		
@@ -153,7 +153,7 @@ class Request {
 	*/
 	public function setParam( $var, $val ){
 		
-		if ( empty( $var ) || is_numeric( $var ) )
+		if ( empty($var) || is_numeric($var) )
 			$this->params[] = $val;
 		else 
 			$this->params[ $var ] = $val;
@@ -167,7 +167,7 @@ class Request {
 	public function setParams( array $args ){
 		
 		foreach( $args as $k => $v ){
-			$this->setParam( $k, $v );
+			$this->setParam($k, $v);
 		}
 		
 		return $this;	
@@ -279,7 +279,7 @@ class Request {
 	* Strips naughty text and slashes from uri components
 	*/
 	protected function filterUriComponent( $str ){
-		return trim( htmlentities( strip_tags($str), ENT_COMPAT ), '/' );	
+		return trim( htmlentities(strip_tags($str), ENT_COMPAT), '/' );	
 	}
 	
 }

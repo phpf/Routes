@@ -6,6 +6,8 @@
 
 namespace Phpf\Routes;
 
+use Phpf\Util\Http;
+
 class Response {
 	
 	const DEFAULT_CONTENT_TYPE = 'text/html';
@@ -40,14 +42,15 @@ class Response {
 	 */
 	public function send(){
 			
-		if ( ! isset( $this->statusCode ) )
+		if ( ! isset($this->statusCode) )
 			$this->statusCode = 200; // assume success
 		
 		// Status header
-		send_status_header( $this->statusCode );
+		$status_header = Http::getStatusHeader($this->statusCode);
+		header($status_header, true, $this->statusCode);
 		
 		// Content-Type header
-		header( $this->getContentTypeHeader() );
+		header($this->getContentTypeHeader());
 		
 		if ( ! isset( $this->headers['Cache-Control'] ) ){
 			$this->nocache();
@@ -59,8 +62,7 @@ class Response {
 		}
 		
 		// Output the body
-		#if ( ! $this->gzip || ! ob_start('ob_gzhandler') )
-			ob_start();
+		ob_start();
 		
 		echo $this->body;
 		
@@ -77,9 +79,9 @@ class Response {
 		$_this = self::i();
 		$request = Request::i();
 		
-		if ( GZIP 
-			&& isset( $request->headers['accept-encoding'] ) 
-			&& false !== strpos( $request->headers['accept-encoding'], 'gzip' ) )
+		if ( isset( $request->headers['accept-encoding'] ) 
+			&& false !== strpos( $request->headers['accept-encoding'], 'gzip' ) 
+			&& extension_loaded('zlib') )
 		{
 			$_this->gzip = true;
 		} else {
@@ -99,7 +101,6 @@ class Response {
 				}
 			}
 		}
-		
 	}
 	
 	/**

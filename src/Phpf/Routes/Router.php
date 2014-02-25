@@ -6,8 +6,8 @@
 
 namespace Phpf\Routes;
 
-use ReflectionFunction;
-use ReflectionMethod;
+use Exception;
+use Phpf\Util\Reflection\Callback;
 
 class Router {
 	
@@ -53,20 +53,37 @@ class Router {
 	*/
 	public function dispatch(){
 		
-		if ( $this->match() ){
+		if ( $route = $this->match() ){
+						
+			$this->request->setRoute($route);
+			
+			$reflection = new Callback($route->callback);
+			
+			$params = $this->getRouteParams($route);
+			
+			var_dump($params);
+			
+			try {
+				$callback_params = $reflection->reflectParameters($params);
+			} catch(Exception $e){
+				header('Status 404 Not Found', true, 404);
+				die("Missing required route parameter " . $e->getMessage());
+			}
 			
 			$response = Response::i();
-			
 			$response->init();
 			
-			$this->setupCallback( $this->request->route(), $response );
+			if ( is_array($route->callback) && is_object($route->callback[0]) ){
+				$route->callback[0]->attach($this->request, 'request');
+				$route->callback[0]->attach($response, 'response');
+			}
 			
-			call( $this->callback, $this->callbackParams );
+			call_user_func_array($route->callback, $callback_params);
 			
 			$response->send();
 		}
 		
-		header($_SERVER['SERVER_PROTOCOL'] . ' Status', true, 404);
+		header('Status 404 Not Found', true, 404);
 		die('Unknown route.');
 		
 	}
@@ -113,7 +130,7 @@ class Router {
 	public function getKeysForRegex(){
 		static $keys;
 		if ( ! isset( $keys ) )
-			$keys = implode( '|', array_keys( $this->getQueryVars() ) );
+			$keys = implode( '|', array_keys($this->getQueryVars()) );
 		return $keys;
 	}
 
@@ -184,13 +201,13 @@ class Router {
 			$priority = $args['priority'];
 			unset( $args['priority'] );
 			
-			return list_filter( $this->routeGroups[ $priority ], $args, $operator );
+			return \list_filter( $this->routeGroups[ $priority ], $args, $operator );
 		}
 		
 		$matched = array();
 		foreach( $this->routeGroups as $priority => $group ){
 			
-			$matches = list_filter( $group, $args, $operator, $key_exists_only );
+			$matches = \list_filter( $group, $args, $operator, $key_exists_only );
 			
 			if ( ! empty( $matches ) )
 				$matched = array_merge( $matched, $matches );
@@ -240,21 +257,17 @@ class Router {
 				if ( ! $Route->isHttpMethodAllowed($http_method) )
 					continue;
 				
-				$nonregexed_uri = $Route->getUri();
-				
 				$route_uri = $this->regexRoute($Route);
 				
-				if ( preg_match('#^/?' . $route_uri . '/?$#', $request_uri, $this->_matches['values']) ) {
+				if ( preg_match('#^/?' . $route_uri . '/?$#', $request_uri, $this->matches['values']) ) {
 					
-					unset($this->_matches['values'][0]);
+					unset($this->matches['values'][0]);
 					
 					$this->matches['keys'] = array_keys($Route->getVars());
 				
 					$this->matchedRoute[ $Route->uri ] = $route_uri; // just for debugging
-					
-					$this->request->setRoute($Route);
 		
-					return true;
+					return $Route;
 				}
 			}
 		}
@@ -273,69 +286,21 @@ class Router {
 		$route_uri = $route->getUri();
 		
 		foreach( $route->getVars() as $varname => $regex_key ){
-			
-			$route_uri = str_replace( ':' . $regex_key . '(' . $varname . ')', $this->getRegex($regex_key), $route_uri );
-			$route_uri = str_replace( ':' . $regex_key, $this->getRegex($regex_key), $route_uri );
+			$route_uri = str_replace(':' . $regex_key . '(' . $varname . ')', $this->getRegex($regex_key), $route_uri);
+			$route_uri = str_replace(':' . $regex_key, $this->getRegex($regex_key), $route_uri);
 		}
 		
 		return $route_uri;
 	}
 	
-	protected function setupCallback( Route $route, Response $response ){
+	protected function getRouteParams( Route $route ){
 		
 		if ( ! empty($this->matches['keys']) && ! empty($this->matches['values']) ){
 			$query_vars = array_combine($this->matches['keys'], $this->matches['values']);
 			$this->request->setQueryVars($query_vars);
 		}
 		
-		$allParams = array_merge($this->request->getQueryVars(), $this->request->getParams());
-		
-		if ( is_array($route->callback) && isset($route->callback[1]) ){
-				
-			$reflection = new ReflectionMethod($route->callback[0], $route->callback[1]);
-			
-			$route->callback[0]->attachObject($this->request, 'request');
-			$route->callback[0]->attachObject($response, 'response');
-			
-		} else {	
-			$reflection = new ReflectionFunction($route->callback);
-		}
-		
-		if ( ! $params = $this->reflectParams($reflection, $allParams) ){
-			die( 'Missing required route parameter.' );
-		}
-		
-		$this->callback = $route->callback;
-		$this->callbackParams = $params;
-	}
-
-	protected function reflectParams(\ReflectionFunctionAbstract $reflection, array $params){
-
-		$ordered = array();
-		$parameters = array();
-		$isClosure = '{closure}' === $reflection->getName();
-		
-		foreach( $reflection->getParameters() as $_param )
-			$ordered[ $_param->getPosition() ] = $_param;
-		
-		ksort($ordered);
-		
-		foreach( $ordered as $i => &$rParam ){
-			
-			$name = $rParam->getName();
-			
-			if ( isset($params[ $name ]) ){
-				$parameters[ $name ] = $params[ $name ];
-			} elseif ( $isClosure && isset($params[$i]) ){
-				$parameters[ $name ] = $params[ $i ];
-			} elseif ( $rParam->isDefaultValueAvailable() ){
-				$parameters[ $name ] = $rParam->getDefaultValue();
-			} else {
-				return false;
-			}
-		}
-		
-		return $parameters;
+		return array_merge($this->request->getQueryVars(), $this->request->getParams());
 	}
 	
 }
