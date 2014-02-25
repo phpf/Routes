@@ -57,19 +57,6 @@ class Router {
 						
 			$this->request->setRoute($route);
 			
-			$reflection = new Callback($route->callback);
-			
-			$params = $this->getRouteParams($route);
-			
-			var_dump($params);
-			
-			try {
-				$callback_params = $reflection->reflectParameters($params);
-			} catch(Exception $e){
-				header('Status 404 Not Found', true, 404);
-				die("Missing required route parameter " . $e->getMessage());
-			}
-			
 			$response = Response::i();
 			$response->init();
 			
@@ -78,7 +65,19 @@ class Router {
 				$route->callback[0]->attach($response, 'response');
 			}
 			
-			call_user_func_array($route->callback, $callback_params);
+			$reflection = new Callback($route->callback);
+			
+			$params = $this->getRouteParams($route);
+			
+			try {
+				$reflection->reflectParameters($params);
+			} catch(Exception $e){
+				header('Status 404 Not Found', true, 404);
+				die("Missing required route parameter " . $e->getMessage());
+			}
+			
+			$reflection->invoke();
+		#	call_user_func_array($route->callback, $callback_params);
 			
 			$response->send();
 		}
@@ -201,13 +200,13 @@ class Router {
 			$priority = $args['priority'];
 			unset( $args['priority'] );
 			
-			return \list_filter( $this->routeGroups[ $priority ], $args, $operator );
+			return \Phpf\Util\Arr::filter( $this->routeGroups[ $priority ], $args, $operator );
 		}
 		
 		$matched = array();
 		foreach( $this->routeGroups as $priority => $group ){
 			
-			$matches = \list_filter( $group, $args, $operator, $key_exists_only );
+			$matches = \Phpf\Util\Arr::filter( $group, $args, $operator, $key_exists_only );
 			
 			if ( ! empty( $matches ) )
 				$matched = array_merge( $matched, $matches );

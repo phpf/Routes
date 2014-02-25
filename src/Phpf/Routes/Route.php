@@ -6,15 +6,13 @@
 
 namespace Phpf\Routes;
 
+use Phpf\Util\Str;
+
 class Route {
 	
 	public $uri;
 	
 	public $callback;
-	
-	public $public = true;
-	
-	public $showInAdmin = false;
 	
 	public $httpMethods = array();
 	
@@ -30,6 +28,9 @@ class Route {
 		
 		if ( empty( $this->httpMethods ) )
 			$this->httpMethods = self::$defaultHttpMethods;
+		
+		// Change methods to keys to use isset() instead of in_array()
+		$this->httpMethods = array_fill_keys($this->httpMethods, true);
 	}
 		
 	/**
@@ -73,12 +74,12 @@ class Route {
 			$route_vars = self::parse( $uri );
 		}
 		
-		if ( ! empty( $route_vars ) ){
+		if ( !empty($route_vars) ){
 				
 			foreach( $route_vars as $key => $regex ){
 				
 				if ( ! isset( $vars[ $key ] ) ){
-					trigger_error( "Cannot build route - missing required var '$key'." );
+					trigger_error("Cannot build route - missing required var '$key'.");
 					return null;
 				}
 			
@@ -94,36 +95,16 @@ class Route {
 	public function import( array $args ){
 		
 		foreach( $args as $k => $v ){
-			$this->{camelcase($k)} = $v;	
+			$this->{Str::camelCase($k)} = $v;	
 		}
 		
 		return $this;
 	}
 	
-	public function getUri(){
-		return $this->uri;	
-	}
-	
-	public function getCallback(){
-		return $this->callback;	
-	}
-	
-	public function isPublic(){
-		return $this->public;	
-	}
-	
-	public function getHttpMethods(){
-		return $this->httpMethods;
-	}
-	
-	public function isHttpMethodAllowed( $method ){
-		return in_array($method, $this->httpMethods);	
-	}
-	
 	public function getVars(){
 		
 		if ( ! isset($this->routeVars) ){
-			$this->routeVars = self::parse( $this->getUri() );
+			$this->routeVars = self::parse( $this->uri );
 		}
 		
 		return $this->routeVars;	
@@ -131,6 +112,22 @@ class Route {
 	
 	public function getUrl( array $vars = null ){
 		return self::buildUri( $this->getVars(), $vars );
+	}
+	
+	public function isHttpMethodAllowed( $method ){
+		return isset($this->httpMethods[$method]);	
+	}
+	
+	public function getHttpMethods(){
+		return $this->httpMethods;
+	}
+	
+	public function getCallback(){
+		return $this->callback;	
+	}
+	
+	public function getUri(){
+		return $this->uri;	
 	}
 	
 }
