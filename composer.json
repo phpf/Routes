@@ -2,7 +2,7 @@
 	"name": "phpf/routes",
 	"type": "library",
 	"description": "Phpf Routes package",
-	"keywords": ["Routes", "Router", "HTTP", "Request"],
+	"keywords": ["Routes", "Router", "Route mapping"],
 	"homepage": "https://github.com/phpf/Routes",
 	"license": "MIT",
 	"authors": [
@@ -13,7 +13,8 @@
 	],
 	"require": {
 		"php": ">=5.3",
-		"phpf/util": "dev-master"
+		"phpf/util": "dev-master",
+		"phpf/http": "dev-master"
 	},
 	"autoload": {
 		"psr-0": {

@@ -6,7 +6,7 @@
 
 namespace Phpf\Routes;
 
-use Phpf\Util\Str;
+use Phpf\Http\Http;
 
 class Route {
 	
@@ -14,23 +14,29 @@ class Route {
 	
 	public $callback;
 	
-	public $httpMethods = array();
+	public $methods = array();
 	
-	public static $defaultHttpMethods = array(HTTP_GET, HTTP_POST, HTTP_HEAD);
+	public static $default_methods = array(
+		Http::METHOD_GET, 
+		Http::METHOD_POST, 
+		Http::METHOD_HEAD,
+	);
 	
-	protected $routeVars;
+	protected $vars;
 	
 	public function __construct( $uri, array $args ){
 			
 		$this->uri = $uri;
 		
-		$this->import( $args );
+		foreach( $args as $k => $v ){
+			$this->$k = $v;	
+		}
 		
-		if ( empty( $this->httpMethods ) )
-			$this->httpMethods = self::$defaultHttpMethods;
+		if ( empty($this->methods) )
+			$this->methods = self::$default_methods;
 		
-		// Change methods to keys to use isset() instead of in_array()
-		$this->httpMethods = array_fill_keys($this->httpMethods, true);
+		// Change to keys to use isset() instead of in_array()
+		$this->methods = array_fill_keys($this->methods, true);
 	}
 		
 	/**
@@ -47,7 +53,7 @@ class Route {
 			
 			foreach( $matches[3] as $i => $var_name ){
 				// replace empty var names with regex key
-				if ( empty( $var_name ) ){
+				if ( empty($var_name) ){
 					$matches[3][ $i ] = $matches[1][ $i ];	
 				}	
 			}
@@ -83,43 +89,34 @@ class Route {
 					return null;
 				}
 			
-				$uri = str_replace( ':' . $regex . '(' . $key . ')', $vars[ $key ], $uri );
-				$uri = str_replace( ':' . $regex, $vars[ $key ], $uri );
-				$uri = str_replace( ':' . $key, $vars[ $key ], $uri );
+				$uri = str_replace( ":{$regex}({$key})", $vars[ $key ], $uri );
+				$uri = str_replace( ":{$regex}", $vars[ $key ], $uri );
+				$uri = str_replace( ":{$key}", $vars[ $key ], $uri );
 			}
 		}
 		
 		return $uri;
 	}
 	
-	public function import( array $args ){
-		
-		foreach( $args as $k => $v ){
-			$this->{Str::camelCase($k)} = $v;	
-		}
-		
-		return $this;
-	}
-	
 	public function getVars(){
 		
-		if ( ! isset($this->routeVars) ){
-			$this->routeVars = self::parse( $this->uri );
+		if ( ! isset($this->vars) ){
+			$this->vars = self::parse($this->uri);
 		}
 		
-		return $this->routeVars;	
+		return $this->vars;	
 	}
 	
 	public function getUrl( array $vars = null ){
 		return self::buildUri( $this->getVars(), $vars );
 	}
 	
-	public function isHttpMethodAllowed( $method ){
-		return isset($this->httpMethods[$method]);	
+	public function getMethods(){
+		return $this->methods;
 	}
 	
-	public function getHttpMethods(){
-		return $this->httpMethods;
+	public function isMethodAllowed( $method ){
+		return isset($this->methods[$method]);	
 	}
 	
 	public function getCallback(){

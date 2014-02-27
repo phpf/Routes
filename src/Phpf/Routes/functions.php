@@ -14,16 +14,9 @@
 function register_routes( array $routes, $priority = 10, array $query_vars = null ){
 	
 	if ( !empty($query_vars) )
-		Phpf\Routes\Router::i()->addQueryVars($query_vars);
+		Phpf\Routes\Router::i()->addVars($query_vars);
 	
 	Phpf\Routes\Router::i()->addRoutes($routes, $priority);
-}
-
-/**
- * Returns the Request instance.
- */
-function request(){
-	return Phpf\Routes\Request::i();	
 }
 
 /**
@@ -31,20 +24,6 @@ function request(){
  */
 function router(){
 	return Phpf\Routes\Router::i();
-}
-
-/**
- * Returns the Response instance.
- */
-function response(){
-	return Phpf\Routes\Response::i();
-}
-
-/**
- * Returns the current Route instance.
- */
-function current_route(){
-	return Phpf\Routes\Request::route();
 }
 
 /**
