@@ -95,4 +95,7 @@ $router->endpoint('admin', function ($router) {
 });
 ```
 
-That's better. Note, however, you can't change the HTTP methods using this last example.
+That's better. Note, however, you can't change the HTTP methods using this last way.
+
+##Important Notes
+We have defined our route callbacks using strings for the class. However, they are not called statically; if the matched route callback uses a string as the first element, the router will attempt to instantiate this class before calling the method. This way, controller callbacks are run in an object context, but the objects do not have to be instantiated unless needed.
