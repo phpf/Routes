@@ -40,17 +40,15 @@ class Router {
 	
 	protected $error_handlers = array();
 	
-	protected static $_instance;
+	protected static $instance;
 	
-	public static function i(){
-		if ( ! isset(self::$_instance) )
-			self::$_instance = new self();
-		return self::$_instance;
+	public static function instance(){
+		if ( ! isset(self::$instance) )
+			self::$instance = new self();
+		return self::$instance;
 	}
 	
-	public function __construct( Request $request ){
-		$this->setRequest($request);
-	}
+	private function __construct(){}
 	
 	/**
 	 * Sets Request object.
@@ -99,6 +97,10 @@ class Router {
 	*/
 	public function dispatch(){
 		
+		if ( !isset($this->request) ){
+			throw new \RuntimeException("Must set Request on Router via setRequest() before dispatch() is called.");
+		}
+		
 		$response = new Response($this->request);
 		
 		if ( $this->match() ){
@@ -106,19 +108,17 @@ class Router {
 			$route =& $this->route;
 			$request =& $this->request;
 			
-			#$this->request->setRoute($route);
+			$reflect = new Callback($route->getCallback());
 			
 			if ( !empty($this->callback_before) ){
 				$before = $this->callback_before;
 				$before($route, $request, $response);
 			}
 			
-			$reflect = new Callback($route->callback);
-			
 			try {
 				$reflect->reflectParameters($request->getParams());
 			} catch(Exception $e){
-				$this->sendError(404, 'Missing required route parameter', $e);
+				$this->sendError(404, 'Missing required route parameter '. $e->getMessage(), $e);
 			}
 			
 			$reflect->invoke();
@@ -178,7 +178,7 @@ class Router {
 	* Returns regex for a query var
 	*/
 	public function getRegex( $key ){
-		return isset($this->vars[$key]) ? $this->vars[$key] : null;	
+		return isset($this->vars[$key]) ? $this->vars[$key] : '';	
 	}
 	
 	/**
@@ -196,7 +196,7 @@ class Router {
 		$objects = array();
 		
 		foreach( $routes as $uri => $args ){
-			$objects[ $uri ] = new Route( $uri, $args );
+			$objects[ $uri ] = new Route($uri, $args);
 		}
 		
 		if ( empty($this->routes[$priority]) ){
@@ -211,8 +211,8 @@ class Router {
 	/**
 	 * Adds a single route
 	 */
-	public function addRoute( $uri, $callback, array $methods = array(), $priority = 10 ){
-		$route = new Route( $uri, compact('callback', 'methods') );
+	public function addRoute( $uri, array $args, $priority = 10 ){
+		$route = new Route($uri, $args);
 		$this->routes[$priority][$uri] = $route;
 		return $this;
 	}
@@ -221,8 +221,8 @@ class Router {
 	 * Alias for addRoute()
 	 * @see \Phpf\Routes\Router::addRoute()
 	 */
-	public function route( $uri, $callback, array $methods = array(), $priority = 10){
-		return $this->addRoute($uri, $callback, $methods, $priority);
+	public function route( $uri, array $args, $priority = 10 ){
+		return $this->addRoute($uri, $args, $priority);
 	}
 
 	/**
@@ -239,49 +239,25 @@ class Router {
 	*/
 	public function getRoutes( $priority = null ){
 		if ( $priority !== null )
-			return isset($this->routes[$priority]) ? $this->routes[$priority] : null;
+			return isset($this->routes[$priority]) ? $this->routes[$priority] : array();
 		return $this->routes;	
 	}
 	
 	/**
-	* Returns array of route objects matching conditions $args.
-	*
-	* @see \Phpf\Util\Arr::filter()
-	*
-	* @param array $args Key value pairs to compare to each list item
-	* @param string $operator One of: 'AND' (default), 'OR', or 'NOT'.
-	* @return array Routes matching conditions.
-	*/
-	public function getRoutesWhere( array $args, $operator = 'AND', $key_exists_only = false ){
-		
-		if ( isset($args['priority']) ){
-			
-			if ( empty($this->routes[ $args['priority'] ]) )
-				return array();
-			
-			// unset priority to avoid false non-matches with 'AND'
-			$i = $args['priority'];
-			unset($args['priority']);
-			
-			return \Phpf\Util\Arr::filter($this->routes[$i], $args, $operator);
-		}
-		
-		$matched = array();
-		foreach( $this->routes as $priority => $group ){
-			
-			$matches = \Phpf\Util\Arr::filter($group, $args, $operator, $key_exists_only);
-			
-			if ( !empty($matches) )
-				$matched = array_merge($matched, $matches);
-		}
-		
-		return $matched;
+	 * Set a controller class to use for the current endpoint.
+	 * @see matchEndpoints()
+	 */
+	public function setController( $class ){
+		$this->ep_controller_class = $class;
+		return $this;
 	}
 	
 	/**
 	* Matches request URI to a route.
 	*/
 	protected function match(){
+			
+		$http_method = $this->request->getMethod();
 		
 		// Remove content type file extensions
 		$uri = $this->stripExtensions($this->request->getUri(), $type);
@@ -290,20 +266,21 @@ class Router {
 			$this->request->content_type = $type;
 		}
 		
-		$http_method = $this->request->getMethod();
-		
 		if ( !empty($this->endpoints) ){
 			if ( $this->matchEndpoints($uri, $http_method) ){
 				return true;
 			}
 		}
 		
-		ksort($this->routes);
-		
-		foreach( $this->routes as $group ){
-			foreach( $group as $Route ){
-				if ( $this->matchRoute($Route, $uri, $http_method) ){
-					return true;
+		if ( !empty($this->routes) ){
+				
+			ksort($this->routes);
+			
+			foreach( $this->routes as $group ){
+				foreach( $group as $Route ){
+					if ( $this->matchRoute($Route, $uri, $http_method) ){
+						return true;
+					}
 				}
 			}
 		}
@@ -316,21 +293,37 @@ class Router {
 	 */
 	protected function matchEndpoints( $uri, $http_method ){
 		
-		foreach($this->endpoints as $path => $callback){
+		foreach($this->endpoints as $path => $closure){
 				
 			if ( 0 === strpos($uri, $path) ){
 				
 				$this->routes[$path] = array();
-				$routes = $callback();
+				$routes = $closure($this);
 				
 				foreach($routes as $epUri => $array){
-						
-					$route = new Route($path.$epUri, $array);
+					
+					// Closure has set a controller class to use for all routes.
+					if ( isset($this->ep_controller_class) ){
+						if ( is_string($array) ){
+							$method = $array;
+							$array = array();
+							$array['callback'] = array($this->ep_controller_class, $method);
+						} elseif ( is_string($array['callback']) ){
+							$method = $array['callback'];
+							$array['callback'] = array($this->ep_controller_class, $method);
+						}
+					}
+					
+					$array['endpoint'] = trim($path, '/');
+					
+					$this->routes[$path][$path.$epUri] = $route = new Route($path.$epUri, $array);
 					
 					if ( $this->matchRoute($route, $uri, $http_method) ){
 						return true;
 					}
 				}
+				
+				unset($this->ep_controller_class);
 			}
 		}
 		
@@ -338,55 +331,69 @@ class Router {
 	}
 	
 	/**
-	 * Determines if given Route matches request.
+	 * Determines if a given Route URI matches the request URI.
+	 * If match, sets Router property $route and assembles the matched query 
+	 * vars and adds them to Request property $path_params.
+	 * If match but HTTP method is not allowed, sends 405 error.
+	 * @TODO Add Header w/ extra info on the 405 as per HTTP/1.1
 	 */
 	protected function matchRoute( Route $route, $uri, $http_method ){
 		
-		if ( $route->isMethodAllowed($http_method) ){
+		$qvs = array();
+		$route_uri = $this->parseRoute($route->uri, $qvs);
+		
+		if ( preg_match('#^/?' . $route_uri . '/?$#i', $uri, $route_vars) ){
 			
-			if (preg_match('#^/?' . $this->regexRoute($route) . '/?$#i', $uri, $matches_v)){
-					
-				$this->route =& $route;
-				
-				// unset full match and get param keys
-				unset($matches_v[0]);
-				$matches_k = array_keys($route->getVars());
-				
-				// set matched params as Request properties
-				if ( !empty($matches_k) && !empty($matches_v) ){
-					$this->request->setPathParams(array_combine($matches_k, $matches_v));
-				}
-				
-				return true;
+			if ( !$route->isMethodAllowed($http_method) ){
+				$this->sendError(405, "HTTP method $http_method is not permitted for this route.");
 			}
+			
+			$this->route =& $route;
+			
+			unset($route_vars[0]);
+			
+			if ( !empty($qvs) && !empty($route_vars) ){
+				$this->request->setPathParams(array_combine($qvs, $route_vars));
+			}
+			
+			return true;
 		}
 		
 		return false;
 	}
 	
 	/**
-	* Converts query vars to regex (e.g. ":id" -> "(\d+)")
-	* 
-	* @param Route $route The Route object
-	* @return string The fully regexed route
-	*/
-	protected function regexRoute( Route $route ){
+	 * Parses a route URI, changing query vars to regex and adding keys to $vars.
+	 */
+	protected function parseRoute( $uri, &$vars = array() ){
 		
-		$uri = $route->getUri();
+		if ( preg_match_all('/<(\w+)+:(.+?)>/', $uri, $matches) ){
+			foreach($matches[0] as $i => $str){
+				if ( '' !== $regex = $this->getRegex($matches[2][$i]) ){
+					// Renamed: <id:int>
+					$uri = str_replace($str, $regex, $uri);
+					$vars[ $matches[2][$i] ] = $matches[1][$i];
+				} else {
+					// Inline: <year:[\d]{4}>
+					$uri = str_replace($str, '(' . $matches[2][$i] . ')', $uri);
+					$vars[ $matches[1][$i] ] = $matches[1][$i];
+				}
+			}
+		}
 		
-		foreach( $route->getVars() as $var => $regex_key ){
-			
-			$uri = str_replace( ":{$regex_key}({$var})", $this->getRegex($regex_key), $uri );
-			
-			$uri = str_replace( ":{$regex_key}", $this->getRegex($regex_key), $uri );
+		if ( preg_match_all('/<(\w+)>/', $uri, $matches) ){
+			foreach($matches[0] as $i => $str){
+				// Predefined: <int>
+				$uri = str_replace($str, $this->getRegex($matches[1][$i]), $uri);
+				$vars[ $matches[1][$i] ] = $matches[2][$i];
+			}
 		}
 		
 		return $uri;
 	}
 	
 	/**
-	* Matches filetypes appended to string (usually URI), removes them,
-	* and sets as the requested content-type if valid.
+	* Matches filetypes at the end of a string (usually URI) and removes them.
 	*/
 	protected function stripExtensions( $string, &$match = null ){
 		

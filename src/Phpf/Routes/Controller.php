@@ -8,14 +8,6 @@ namespace Phpf\Routes;
  
 abstract class Controller {
 	
-	protected static $_instance;
-	
-	final public static function i(){
-		if ( ! isset(static::$_instance) )
-			static::$_instance = new static();
-		return static::$_instance;
-	}
-	
 	/**
 	 * Get an object property.
 	 */
