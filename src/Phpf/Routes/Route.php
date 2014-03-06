@@ -52,6 +52,14 @@ class Route {
 	
 	public function getCallback(){
 		
+		static $built;
+		
+		if ( !isset($built) ) $built = false;
+		
+		if ( $built ){
+			return $this->callback;
+		}
+		
 		// Instantiate the controller on route match.
 		// This means don't have to create a bunch of objects
 		// in order to receive the request in object context.
@@ -70,6 +78,8 @@ class Route {
 			
 			\Registry::set('controller.'.$name, $this->callback[0]);
 		}
+		
+		$built = true;
 		
 		return $this->callback;	
 	}

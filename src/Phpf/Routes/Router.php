@@ -5,17 +5,16 @@
 
 namespace Phpf\Routes;
 
+use Phpf\Util\Singleton;
 use Phpf\Http\Request;
 use Phpf\Http\Response;
-use Closure;
-use Exception;
 use Phpf\Util\Reflection\Callback;
 
-class Router {
+class Router implements Singleton {
 	
-	public $routes = array();
+	protected $routes = array();
 	
-	public $vars = array(
+	protected $vars = array(
 		'segment'	=> '([^_/][^/]+)',
 		'words'		=> '(\w\-+)',
 		'int'		=> '(\d+)',
@@ -28,7 +27,9 @@ class Router {
 	 * If matched, will set Request $content_type property
 	 * and override any set by the header.
 	 */
-	public $strip_extensions = 'html|jsonp|json|xml|php';
+	protected $strip_extensions = array(
+		'html', 'jsonp', 'json', 'xml', 'php'
+	);
 	
 	protected $route;
 	
@@ -39,6 +40,8 @@ class Router {
 	protected $callback_after;
 	
 	protected $error_handlers = array();
+	
+	protected $route_catchers = array();
 	
 	protected static $instance;
 	
@@ -54,7 +57,7 @@ class Router {
 	 * Sets Request object.
 	 */
 	public function setRequest( Request $request ){
-		$this->request =& $request;
+		$this->request = $request;
 	}
 	
 	/**
@@ -72,24 +75,52 @@ class Router {
 	}
 	
 	/**
+	 * Adds an extension to strip from URIs
+	 */
+	public function stripExtension( $extension ){
+		$this->strip_extensions[] = ltrim(strtolower($extension), '.');
+		return $this;
+	}
+	
+	/**
 	 * Callback run before route callback is executed.
 	 */	
-	public function before( Closure $closure ){
+	public function before( \Closure $closure ){
 		$this->callback_before = $closure;
 	}
 	
 	/**
 	 * Callback run after route callback is executed.
 	 */	
-	public function after( Closure $closure ){
+	public function after( \Closure $closure ){
 		$this->callback_after = $closure;
 	}
 	
 	/**
 	 * Registers an error handler callback (closure).
 	 */	
-	public function handleError( $code, Closure $closure ){
+	public function onError( $code, \Closure $closure ){
 		$this->error_handlers[$code] = $closure;
+	}
+	
+	/**
+	 * Adds a route catcher
+	 */
+	public function addCatcher( Catcher\AbstractCatcher $catcher, $priority = null ){
+			
+		$catcher->setRequest($this->request);
+		
+		if ( ! isset($priority) ){
+			if ( ! empty($this->route_catchers) ){
+				$priority = max(array_keys($this->route_catchers))+1;
+			} else {
+				$priority = 10;
+			}
+		}
+		
+		$this->route_catchers[ $priority ] = $catcher;
+		
+		return $this;
 	}
 	
 	/**
@@ -97,7 +128,7 @@ class Router {
 	*/
 	public function dispatch(){
 		
-		if ( !isset($this->request) ){
+		if ( ! isset($this->request) ){
 			throw new \RuntimeException("Must set Request on Router via setRequest() before dispatch() is called.");
 		}
 		
@@ -105,45 +136,45 @@ class Router {
 		
 		if ( $this->match() ){
 			
-			$route =& $this->route;
-			$request =& $this->request;
+			$reflect = new Callback($this->route->getCallback());
 			
-			$reflect = new Callback($route->getCallback());
-			
-			if ( !empty($this->callback_before) ){
-				$before = $this->callback_before;
-				$before($route, $request, $response);
-			}
+			$this->call('before', $response);
 			
 			try {
-				$reflect->reflectParameters($request->getParams());
-			} catch(Exception $e){
-				$this->sendError(404, 'Missing required route parameter '. $e->getMessage(), $e);
+				
+				$reflect->reflectParameters($this->request->getParams());
+				
+			} catch (\Phpf\Util\Reflection\Exception\MissingParam $exception) {
+				
+				$msg = "Missing required route parameter '$exception->getMessage()'.";
+				
+				$this->sendError(404, $msg, $response, $exception);
 			}
 			
 			$reflect->invoke();
 			
-			if ( !empty($this->callback_after) ){
-				$after = $this->callback_after;
-				$after($route, $request, $response);
-			}
+			$this->catchRoute($response);
+			
+			$this->call('after', $response);
 		}
 		
-		$this->sendError(404, 'Unknown route');
+		$this->sendError(404, 'Unknown route', $response);
 	}
 	
 	/**
 	 * Sends an error using an error handler based on status code, if exists.
 	 */
-	public function sendError( $code, $msg = '', $exception = null ){
+	public function sendError( $code, $msg = '', $response, $exception = null ){
 		
 		if ( isset($this->error_handlers[ $code ] ) ){
 			$exec = $this->error_handlers[$code];
-			return $exec($code, $msg, $exception, $response);
+			$exec($msg, $response, $exception);
 		} else {
 			header(\Phpf\Http\Http::statusHeader($code), true, $code);
-			die($msg);
+			echo $msg;
 		}
+		
+		exit;
 	}
 	
 	/**
@@ -228,7 +259,7 @@ class Router {
 	/**
 	 * Add a group of routes under an endpoint/namespace
 	 */
-	public function endpoint( $path, Closure $callback ){
+	public function endpoint( $path, \Closure $callback ){
 		$this->endpoints[$path] = $callback;
 		return $this;
 	}
@@ -344,7 +375,7 @@ class Router {
 		
 		if ( preg_match('#^/?' . $route_uri . '/?$#i', $uri, $route_vars) ){
 			
-			if ( !$route->isMethodAllowed($http_method) ){
+			if ( ! $route->isMethodAllowed($http_method) ){
 				$this->sendError(405, "HTTP method $http_method is not permitted for this route.");
 			}
 			
@@ -381,15 +412,40 @@ class Router {
 			}
 		}
 		
-		if ( preg_match_all('/<(\w+)>/', $uri, $matches) ){
-			foreach($matches[0] as $i => $str){
-				// Predefined: <int>
-				$uri = str_replace($str, $this->getRegex($matches[1][$i]), $uri);
-				$vars[ $matches[1][$i] ] = $matches[2][$i];
+		return $uri;
+	}
+	
+	/**
+	 * Catches and processes caught routes
+	 */
+	protected function catchRoute( Response $response ){
+		
+		if ( !empty($this->route_catchers) ){
+			
+			ksort($this->route_catchers);
+					
+			foreach($this->route_catchers as $catcher){
+				
+				$catcher->init($this);
+				
+				if ( $catcher->catchRoute($this->route) ){
+					$catcher->process($response);
+				}
 			}
 		}
+	}
+	
+	/**
+	 * Calls an action callback.
+	 */
+	protected function call( $action, Response $response ){
 		
-		return $uri;
+		$var = 'callback_' . $action;
+		
+		if ( isset($this->$var) ){
+			$exec = $this->$var;
+			$exec($this->route, $this->request, $response);
+		}
 	}
 	
 	/**
@@ -397,7 +453,13 @@ class Router {
 	*/
 	protected function stripExtensions( $string, &$match = null ){
 		
-		if ( preg_match("/[\.|\/]($this->strip_extensions)/", $string, $matches) ){
+		static $extensions;
+		
+		if ( ! isset($extensions) ){
+			$extensions = implode('|', $this->strip_extensions);
+		}
+		
+		if ( preg_match("/[\.|\/]($extensions)/", $string, $matches) ){
 			$match = $matches[1];
 			// remove extension and separator
 			$string = str_replace( substr($matches[0], 0, 1).$match, '', $string );
@@ -405,5 +467,5 @@ class Router {
 		
 		return $string;
 	}
-	
+		
 }
