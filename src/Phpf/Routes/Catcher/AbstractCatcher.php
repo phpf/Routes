@@ -9,25 +9,17 @@ use Phpf\Http\Response;
 
 abstract class AbstractCatcher {
 	
-	protected $request;
-	
-	protected $route;
-	
-	final public function setRequest( Request &$request ){
-		$this->request =& $request;
-	}
-	
 	/**
 	 * Called when added to Router
 	 */
-	public function init( Router $router ){
-		// do stuff with router
+	public function init( Router $router, Request $request ){
+		// do stuff with router and/or request
 	}
 	
 	/**
 	 * Should return true if caught, otherwise false.
 	 */
-	abstract public function catchRoute( Route $route );
+	abstract public function catchRoute( Route $route, Request $request );
 	
 	/**
 	 * Process to do when route is caught.

@@ -43,7 +43,7 @@ class Route {
 	}
 	
 	public function getMethods(){
-		return $this->methods;
+		return array_keys($this->methods);
 	}
 	
 	public function isMethodAllowed( $method ){

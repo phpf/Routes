@@ -6,11 +6,12 @@
 namespace Phpf\Routes;
 
 use Phpf\Util\Singleton;
+use Phpf\Util\iEventable;
 use Phpf\Http\Request;
 use Phpf\Http\Response;
 use Phpf\Util\Reflection\Callback;
 
-class Router implements Singleton {
+class Router implements Singleton, iEventable {
 	
 	protected $routes = array();
 	
@@ -31,15 +32,13 @@ class Router implements Singleton {
 		'html', 'jsonp', 'json', 'xml', 'php'
 	);
 	
-	protected $route;
-	
 	protected $request;
 	
-	protected $callback_before;
+	protected $response;
 	
-	protected $callback_after;
+	protected $route;
 	
-	protected $error_handlers = array();
+	protected $actions = array();
 	
 	protected $route_catchers = array();
 	
@@ -54,10 +53,63 @@ class Router implements Singleton {
 	private function __construct(){}
 	
 	/**
-	 * Sets Request object.
+	 * Matches and routes a request URI.
 	 */
-	public function setRequest( Request $request ){
-		$this->request = $request;
+	public function dispatch( Request &$request, Response &$response ){
+		
+		$this->request =& $request;
+		$this->response =& $response;
+		
+		if ( $this->match() ){
+			
+			$reflect = new Callback($this->route->getCallback());
+			
+			$this->trigger('dispatch:before');
+			
+			try {
+				
+				$reflect->reflectParameters($this->request->getParams());
+				
+			} catch (\Phpf\Util\Reflection\Exception\MissingParam $e) {
+				
+				// @TODO make Missing Route Param a (Route) exception
+				$exception = new \RuntimeException("Missing required route parameter " . $e->getMissingParam());
+				
+				$this->error(404, $exception, $this->route);
+			}
+			
+			$reflect->invoke();
+			
+			$this->catchRoute();
+			
+			$this->trigger('dispatch:after');
+		}
+		
+		// @TODO make Unknown Route an exception
+		$exception = new \Exception('Unknown route');
+		
+		$this->error(404, $exception, null);
+	}
+	
+	/**
+	 * Sends an error using an error handler based on status code, if exists.
+	 */
+	public function error( $code, \Exception $exception, Route $route = null ){
+		
+		$this->response->setStatus($code);
+		
+		$action = 'error.'.$code;	
+		
+		if ( empty($this->actions[$action]) ){
+			$this->response->sendStatusHeader();
+			echo $exception->getMessage();
+		} else {
+			foreach($this->actions[$action] as $closure){
+				$closure($exception, $route, $this->request, $this->response);
+			}
+		}
+		
+		exit;
 	}
 	
 	/**
@@ -68,113 +120,17 @@ class Router implements Singleton {
 	}
 	
 	/**
+	 * Gets Response object
+	 */
+	public function getResponse(){
+		return $this->response;
+	}
+	
+	/**
 	 * Gets matched Route object
 	 */
-	public function getCurrentRoute(){
+	public function getRoute(){
 		return $this->route;
-	}
-	
-	/**
-	 * Adds an extension to strip from URIs
-	 */
-	public function stripExtension( $extension ){
-		$this->strip_extensions[] = ltrim(strtolower($extension), '.');
-		return $this;
-	}
-	
-	/**
-	 * Callback run before route callback is executed.
-	 */	
-	public function before( \Closure $closure ){
-		$this->callback_before = $closure;
-	}
-	
-	/**
-	 * Callback run after route callback is executed.
-	 */	
-	public function after( \Closure $closure ){
-		$this->callback_after = $closure;
-	}
-	
-	/**
-	 * Registers an error handler callback (closure).
-	 */	
-	public function onError( $code, \Closure $closure ){
-		$this->error_handlers[$code] = $closure;
-	}
-	
-	/**
-	 * Adds a route catcher
-	 */
-	public function addCatcher( Catcher\AbstractCatcher $catcher, $priority = null ){
-			
-		$catcher->setRequest($this->request);
-		
-		if ( ! isset($priority) ){
-			if ( ! empty($this->route_catchers) ){
-				$priority = max(array_keys($this->route_catchers))+1;
-			} else {
-				$priority = 10;
-			}
-		}
-		
-		$this->route_catchers[ $priority ] = $catcher;
-		
-		return $this;
-	}
-	
-	/**
-	* Matches and routes a request URI.
-	*/
-	public function dispatch(){
-		
-		if ( ! isset($this->request) ){
-			throw new \RuntimeException("Must set Request on Router via setRequest() before dispatch() is called.");
-		}
-		
-		$response = new Response($this->request);
-		
-		if ( $this->match() ){
-			
-			$reflect = new Callback($this->route->getCallback());
-			
-			$this->call('before', $response);
-			
-			try {
-				
-				$reflect->reflectParameters($this->request->getParams());
-				
-			} catch (\Phpf\Util\Reflection\Exception\MissingParam $exception) {
-				
-				$msg = "Missing required route parameter '$exception->getMessage()'.";
-				
-				$this->sendError(404, $msg, $response, $exception);
-			}
-			
-			$reflect->invoke();
-			
-			$this->catchRoute($response);
-			
-			$this->call('after', $response);
-		}
-		
-		$this->sendError(404, 'Unknown route', $response);
-	}
-	
-	/**
-	 * Sends an error using an error handler based on status code, if exists.
-	 */
-	public function sendError( $code, $msg = '', $response, $exception = null ){
-		
-		if ( isset($this->error_handlers[ $code ] ) ){
-			$exec = $this->error_handlers[$code];
-			$exec($msg, $response, $exception);
-		} else {
-			header(\Phpf\Http\Http::statusHeader($code), true, $code);
-			echo $msg;
-		}
-		
-		exit;
 	}
 	
 	/**
@@ -213,6 +169,23 @@ class Router implements Singleton {
 	}
 	
 	/**
+	 * Adds a single route
+	 */
+	public function addRoute( $uri, array $args, $priority = 10 ){
+		$route = new Route($uri, $args);
+		$this->routes[$priority][$uri] = $route;
+		return $this;
+	}
+	
+	/**
+	 * Alias for addRoute()
+	 * @see \Phpf\Routes\Router::addRoute()
+	 */
+	public function route( $uri, array $args, $priority = 10 ){
+		return $this->addRoute($uri, $args, $priority);
+	}
+
+	/**
 	* Adds a group of routes.
 	*
 	* Group can already exist in same or other grouping (priority).
@@ -240,31 +213,6 @@ class Router implements Singleton {
 	}
 	
 	/**
-	 * Adds a single route
-	 */
-	public function addRoute( $uri, array $args, $priority = 10 ){
-		$route = new Route($uri, $args);
-		$this->routes[$priority][$uri] = $route;
-		return $this;
-	}
-	
-	/**
-	 * Alias for addRoute()
-	 * @see \Phpf\Routes\Router::addRoute()
-	 */
-	public function route( $uri, array $args, $priority = 10 ){
-		return $this->addRoute($uri, $args, $priority);
-	}
-
-	/**
-	 * Add a group of routes under an endpoint/namespace
-	 */
-	public function endpoint( $path, \Closure $callback ){
-		$this->endpoints[$path] = $callback;
-		return $this;
-	}
-	
-	/**
 	* Returns array of route objects, their URI as the key.
 	* Can return a specified priority group, otherwise returns all.
 	*/
@@ -272,6 +220,14 @@ class Router implements Singleton {
 		if ( $priority !== null )
 			return isset($this->routes[$priority]) ? $this->routes[$priority] : array();
 		return $this->routes;	
+	}
+	
+	/**
+	 * Add a group of routes under an endpoint/namespace
+	 */
+	public function endpoint( $path, \Closure $callback ){
+		$this->endpoints[$path] = $callback;
+		return $this;
 	}
 	
 	/**
@@ -284,6 +240,75 @@ class Router implements Singleton {
 	}
 	
 	/**
+	 * Adds an extension to strip from URIs
+	 */
+	public function stripExtension( $extension ){
+		$this->strip_extensions[] = ltrim(strtolower($extension), '.');
+		return $this;
+	}
+	
+	/**
+	 * Adds an action callback. Also used for errors.
+	 * Error actions use the format 'error.<code>'
+	 */
+	public function on( $action, \Closure $call ){
+		$this->actions[$action][] = $call;
+		return $this;
+	}
+	
+	/**
+	 * Calls action callback(s).
+	 */
+	public function trigger( $action, array $args = array() ){
+			
+		if ( ! empty($this->actions[$action]) ){
+				
+			foreach($this->actions[$action] as $closure){
+				
+				$closure($this->route, $this->request, $this->response);
+			}
+		}
+	}
+	
+	/**
+	 * Adds a route catcher
+	 */
+	public function addCatcher( Catcher\AbstractCatcher $catcher, $priority = null ){
+		
+		if ( ! isset($priority) ){
+			if ( ! empty($this->route_catchers) ){
+				$priority = max(array_keys($this->route_catchers))+1;
+			} else {
+				$priority = 10;
+			}
+		}
+		
+		$this->route_catchers[ $priority ] = $catcher;
+		
+		return $this;
+	}
+	
+	/**
+	 * Catches and processes caught routes
+	 */
+	protected function catchRoute(){
+		
+		if ( empty($this->route_catchers) )
+			return;
+		
+		ksort($this->route_catchers);
+				
+		foreach($this->route_catchers as $catcher){
+			
+			$catcher->init($this, $this->request);
+			
+			if ( $catcher->catchRoute($this->route, $this->request) ){
+				$catcher->process($this->response);
+			}
+		}
+	}
+	
+	/**
 	* Matches request URI to a route.
 	*/
 	protected function match(){
@@ -293,17 +318,17 @@ class Router implements Singleton {
 		// Remove content type file extensions
 		$uri = $this->stripExtensions($this->request->getUri(), $type);
 		
-		if ( !empty($type) ){
+		if ( ! empty($type) ){
 			$this->request->content_type = $type;
 		}
 		
-		if ( !empty($this->endpoints) ){
+		if ( ! empty($this->endpoints) ){
 			if ( $this->matchEndpoints($uri, $http_method) ){
 				return true;
 			}
 		}
 		
-		if ( !empty($this->routes) ){
+		if ( ! empty($this->routes) ){
 				
 			ksort($this->routes);
 			
@@ -366,7 +391,6 @@ class Router implements Singleton {
 	 * If match, sets Router property $route and assembles the matched query 
 	 * vars and adds them to Request property $path_params.
 	 * If match but HTTP method is not allowed, sends 405 error.
-	 * @TODO Add Header w/ extra info on the 405 as per HTTP/1.1
 	 */
 	protected function matchRoute( Route $route, $uri, $http_method ){
 		
@@ -376,7 +400,13 @@ class Router implements Singleton {
 		if ( preg_match('#^/?' . $route_uri . '/?$#i', $uri, $route_vars) ){
 			
 			if ( ! $route->isMethodAllowed($http_method) ){
-				$this->sendError(405, "HTTP method $http_method is not permitted for this route.");
+				
+				// @TODO Make disallowed HTTP method an Exception.
+				$exception = new \Exception("HTTP method $http_method is not permitted for this route.");
+				
+				$this->response->addHeader('Allow', implode(', ', $route->getMethods()));
+				
+				$this->error(405, $exception, $route);
 			}
 			
 			$this->route =& $route;
@@ -399,7 +429,9 @@ class Router implements Singleton {
 	protected function parseRoute( $uri, &$vars = array() ){
 		
 		if ( preg_match_all('/<(\w+)+:(.+?)>/', $uri, $matches) ){
+				
 			foreach($matches[0] as $i => $str){
+					
 				if ( '' !== $regex = $this->getRegex($matches[2][$i]) ){
 					// Renamed: <id:int>
 					$uri = str_replace($str, $regex, $uri);
@@ -413,39 +445,6 @@ class Router implements Singleton {
 		}
 		
 		return $uri;
-	}
-	
-	/**
-	 * Catches and processes caught routes
-	 */
-	protected function catchRoute( Response $response ){
-		
-		if ( !empty($this->route_catchers) ){
-			
-			ksort($this->route_catchers);
-					
-			foreach($this->route_catchers as $catcher){
-				
-				$catcher->init($this);
-				
-				if ( $catcher->catchRoute($this->route) ){
-					$catcher->process($response);
-				}
-			}
-		}
-	}
-	
-	/**
-	 * Calls an action callback.
-	 */
-	protected function call( $action, Response $response ){
-		
-		$var = 'callback_' . $action;
-		
-		if ( isset($this->$var) ){
-			$exec = $this->$var;
-			$exec($this->route, $this->request, $response);
-		}
 	}
 	
 	/**

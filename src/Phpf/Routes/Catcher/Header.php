@@ -3,6 +3,7 @@
 namespace Phpf\Routes\Catcher;
 
 use Phpf\Routes\Route;
+use Phpf\Http\Request;
 
 abstract class Header extends AbstractCatcher {
 	
@@ -14,9 +15,9 @@ abstract class Header extends AbstractCatcher {
 		return $this->catch;
 	}
 	
-	public function catchRoute( Route $route ){
+	public function catchRoute( Route $route, Request $request ){
 			
-		if ( isset($this->request->headers[$this->getCatchValue()]) ){
+		if ( isset($request->headers[$this->getCatchValue()]) ){
 			return true;
 		}
 		
