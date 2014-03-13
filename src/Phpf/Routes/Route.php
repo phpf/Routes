@@ -54,20 +54,19 @@ class Route {
 		
 		static $built;
 		
-		if ( !isset($built) ) $built = false;
+		if ( !isset($built) ) 
+			$built = false;
 		
-		if ( $built ){
+		if ( $built )
 			return $this->callback;
-		}
 		
 		// Instantiate the controller on route match.
 		// This means don't have to create a bunch of objects
 		// in order to receive the request in object context.
-		if ( $this->init_on_match 
-			&& is_array($this->callback) 
-			&& is_string($this->callback[0]) )
+		if ( $this->init_on_match && is_array($this->callback) 
+			&& isset($this->action) && isset($this->controller) ) 
 		{
-			$class = $this->callback[0];
+			$class = $this->controller;	
 			$this->callback[0] = new $class();
 			
 			if ( isset($this->endpoint) ){

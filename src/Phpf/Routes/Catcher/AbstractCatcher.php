@@ -2,9 +2,9 @@
 
 namespace Phpf\Routes\Catcher;
 
+use Phpf\Routes\Router;
 use Phpf\Http\Request;
 use Phpf\Routes\Route;
-use Phpf\Routes\Router;
 use Phpf\Http\Response;
 
 abstract class AbstractCatcher {

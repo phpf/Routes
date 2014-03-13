@@ -11,7 +11,8 @@ use Phpf\Http\Request;
 use Phpf\Http\Response;
 use Phpf\Util\Reflection\Callback;
 
-class Router implements Singleton, iEventable {
+class Router implements Singleton, iEventable 
+{
 	
 	protected $routes = array();
 	
@@ -50,7 +51,17 @@ class Router implements Singleton, iEventable {
 		return self::$instance;
 	}
 	
-	private function __construct(){}
+	private function __construct(){
+		
+		// Default error event
+		$this->on('router.http.404', function ($event, $exception, $route, $request, $response){
+			if (!$event->isDefaultPrevented()){
+				$response->sendStatusHeader();
+				$response->setBody($exception->getMessage());
+				$response->send();
+			}
+		});
+	}
 	
 	/**
 	 * Matches and routes a request URI.
@@ -64,16 +75,16 @@ class Router implements Singleton, iEventable {
 			
 			$reflect = new Callback($this->route->getCallback());
 			
-			$this->trigger('dispatch:before');
+			$this->trigger('router.dispatch:before', $this->route, $this->request, $this->response);
 			
 			try {
 				
-				$reflect->reflectParameters($this->request->getParams());
+				$reflect->reflectParameters($request->getParams());
 				
 			} catch (\Phpf\Util\Reflection\Exception\MissingParam $e) {
 				
-				// @TODO make Missing Route Param a (Route) exception
-				$exception = new \RuntimeException("Missing required route parameter " . $e->getMissingParam());
+				$exception = new Exception\MissingRouteParameter;
+				$exception->setMissingParameter($e->getMissingParam());
 				
 				$this->error(404, $exception, $this->route);
 			}
@@ -82,34 +93,71 @@ class Router implements Singleton, iEventable {
 			
 			$this->catchRoute();
 			
-			$this->trigger('dispatch:after');
+			$this->trigger('router.dispatch:after', $this->route, $this->request, $this->response);
 		}
 		
-		// @TODO make Unknown Route an exception
-		$exception = new \Exception('Unknown route');
+		$this->error(404, new Exception\UnknownRoute('Unknown route'), null);
+	}
+	
+	/**
+	 * Adds an action (event) callback. Also used for errors.
+	 * 
+	 * Router events use the syntax 'router.<event>'
+	 */
+	public function on( $action, $call, $priority = 10 ){
+			
+		if ( !isset($this->events) )
+			$this->events = array();
+			
+		if ( $this->events instanceof \Phpf\Event\Container ){
+			$this->events->on($action, $call, $priority);
+		} else {
+			$this->events[$action] = $call;
+		}
 		
-		$this->error(404, $exception, null);
+		return $this;
+	}
+	
+	/**
+	 * Calls action callback(s).
+	 */
+	public function trigger( $action /* [, $arg1, ...] */){
+		
+		$args = func_get_args();
+				
+		if ($this->events instanceof \Phpf\Event\Container){
+			return call_user_func_array(array($this->events, 'trigger'), $args);
+		}
+		
+		$r = array(); // emulate events
+		if (! empty($this->events[$action])){
+			foreach($this->events[$action] as $event){
+				$r[] = call_user_func_array($event, $args);
+			}
+		}
+		
+		return $r;
 	}
 	
 	/**
 	 * Sends an error using an error handler based on status code, if exists.
+	 * 
+	 * Router error events use the syntax 'router.http.<code>'
 	 */
 	public function error( $code, \Exception $exception, Route $route = null ){
 		
 		$this->response->setStatus($code);
 		
-		$action = 'error.'.$code;	
-		
-		if ( empty($this->actions[$action]) ){
-			$this->response->sendStatusHeader();
-			echo $exception->getMessage();
-		} else {
-			foreach($this->actions[$action] as $closure){
-				$closure($exception, $route, $this->request, $this->response);
-			}
-		}
+		$this->trigger('router.http.'.$code, $exception, $route, $this->request, $this->response);
 		
 		exit;
+	}
+	
+	/**
+	 * Sets Event container.
+	 */
+	public function setEvents( \Phpf\Event\Container $events ){
+		$this->events = $events;
 	}
 	
 	/**
@@ -177,10 +225,7 @@ class Router implements Singleton, iEventable {
 		return $this;
 	}
 	
-	/**
-	 * Alias for addRoute()
-	 * @see \Phpf\Routes\Router::addRoute()
-	 */
+	/** @alias addRoute() */
 	public function route( $uri, array $args, $priority = 10 ){
 		return $this->addRoute($uri, $args, $priority);
 	}
@@ -245,29 +290,6 @@ class Router implements Singleton, iEventable {
 	public function stripExtension( $extension ){
 		$this->strip_extensions[] = ltrim(strtolower($extension), '.');
 		return $this;
-	}
-	
-	/**
-	 * Adds an action callback. Also used for errors.
-	 * Error actions use the format 'error.<code>'
-	 */
-	public function on( $action, \Closure $call ){
-		$this->actions[$action][] = $call;
-		return $this;
-	}
-	
-	/**
-	 * Calls action callback(s).
-	 */
-	public function trigger( $action, array $args = array() ){
-			
-		if ( ! empty($this->actions[$action]) ){
-				
-			foreach($this->actions[$action] as $closure){
-				
-				$closure($this->route, $this->request, $this->response);
-			}
-		}
 	}
 	
 	/**
@@ -349,32 +371,34 @@ class Router implements Singleton, iEventable {
 	 */
 	protected function matchEndpoints( $uri, $http_method ){
 		
-		foreach($this->endpoints as $path => $closure){
+		foreach( $this->endpoints as $path => $closure ) {
 				
-			if ( 0 === strpos($uri, $path) ){
+			if (0 === strpos($uri, $path)) {
 				
 				$this->routes[$path] = array();
 				$routes = $closure($this);
 				
-				foreach($routes as $epUri => $array){
+				foreach( $routes as $epUri => $array ) {
 					
-					// Closure has set a controller class to use for all routes.
-					if ( isset($this->ep_controller_class) ){
-						if ( is_string($array) ){
-							$method = $array;
+					if (isset($this->ep_controller_class)) {
+						// Closure has set a controller class to use for all routes.
+						if (is_string($array)) {
+							$action = $array; 
 							$array = array();
-							$array['callback'] = array($this->ep_controller_class, $method);
-						} elseif ( is_string($array['callback']) ){
-							$method = $array['callback'];
-							$array['callback'] = array($this->ep_controller_class, $method);
+							$array['controller'] = $this->ep_controller_class;
+							$array['action'] = $action;
+						} elseif (isset($array['action'])) {
+							$array['controller'] = $this->ep_controller_class;
 						}
+						
+						$array['callback'] = array($array['controller'], $array['action']);
 					}
 					
 					$array['endpoint'] = trim($path, '/');
 					
-					$this->routes[$path][$path.$epUri] = $route = new Route($path.$epUri, $array);
+					$route = $this->routes[$path][$path.$epUri] = new Route($path.$epUri, $array);
 					
-					if ( $this->matchRoute($route, $uri, $http_method) ){
+					if ($this->matchRoute($route, $uri, $http_method)) {
 						return true;
 					}
 				}
@@ -389,22 +413,23 @@ class Router implements Singleton, iEventable {
 	/**
 	 * Determines if a given Route URI matches the request URI.
 	 * If match, sets Router property $route and assembles the matched query 
-	 * vars and adds them to Request property $path_params.
-	 * If match but HTTP method is not allowed, sends 405 error.
+	 * vars and adds them to Request property $path_params. However, if
+	 * the HTTP method is not allowed, a 405 Status error is returned.
 	 */
 	protected function matchRoute( Route $route, $uri, $http_method ){
 		
 		$qvs = array();
 		$route_uri = $this->parseRoute($route->uri, $qvs);
 		
-		if ( preg_match('#^/?' . $route_uri . '/?$#i', $uri, $route_vars) ){
+		if (preg_match('#^/?' . $route_uri . '/?$#i', $uri, $route_vars)) {
 			
-			if ( ! $route->isMethodAllowed($http_method) ){
+			if (! $route->isMethodAllowed($http_method)) {
 				
-				// @TODO Make disallowed HTTP method an Exception.
-				$exception = new \Exception("HTTP method $http_method is not permitted for this route.");
+				$exception = new Exception\HttpMethodNotAllowed;
+				$exception->setRequestedMethod($http_method);
+				$exception->setAllowedMethods($route->getMethods());
 				
-				$this->response->addHeader('Allow', implode(', ', $route->getMethods()));
+				$this->response->addHeader('Allow', $exception->getAllowedMethodsString());
 				
 				$this->error(405, $exception, $route);
 			}
@@ -413,7 +438,7 @@ class Router implements Singleton, iEventable {
 			
 			unset($route_vars[0]);
 			
-			if ( !empty($qvs) && !empty($route_vars) ){
+			if (! empty($qvs) && ! empty($route_vars)) {
 				$this->request->setPathParams(array_combine($qvs, $route_vars));
 			}
 			
@@ -428,11 +453,11 @@ class Router implements Singleton, iEventable {
 	 */
 	protected function parseRoute( $uri, &$vars = array() ){
 		
-		if ( preg_match_all('/<(\w+)+:(.+?)>/', $uri, $matches) ){
+		if (preg_match_all('/<(\w+)+:(.+?)>/', $uri, $matches)) {
 				
-			foreach($matches[0] as $i => $str){
+			foreach( $matches[0] as $i => $str ) {
 					
-				if ( '' !== $regex = $this->getRegex($matches[2][$i]) ){
+				if ('' !== $regex = $this->getRegex($matches[2][$i])) {
 					// Renamed: <id:int>
 					$uri = str_replace($str, $regex, $uri);
 					$vars[ $matches[2][$i] ] = $matches[1][$i];
@@ -461,7 +486,7 @@ class Router implements Singleton, iEventable {
 		if ( preg_match("/[\.|\/]($extensions)/", $string, $matches) ){
 			$match = $matches[1];
 			// remove extension and separator
-			$string = str_replace( substr($matches[0], 0, 1).$match, '', $string );
+			$string = str_replace(substr($matches[0], 0, 1).$match, '', $string);
 		}
 		
 		return $string;

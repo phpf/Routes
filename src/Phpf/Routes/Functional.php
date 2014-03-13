@@ -8,20 +8,6 @@ namespace Phpf\Routes {
 }
 
 namespace {
-	
-	/**
-	 * Register a Phpf\Routes\Controller instance.
-	 */
-	function register_controller( $id, \Phpf\Routes\Controller $object ){
-		\Phpf\Util\Registry::set('controller.'.$id, $object);
-	}
-	
-	/**
-	 * Returns a registered Phpf\Routes\Controller instance.
-	 */
-	function get_controller( $id ){
-		return \Phpf\Util\Registry::get('controller.'.$id);
-	}
 			
 	/**
 	 * Register an array of routes.
@@ -30,7 +16,7 @@ namespace {
 	 * @param int $priority Route priority. default 10 (optional)
 	 * @param array $query_vars Associative array of {key} => {regex} pairs. These will also be registered (optional)
 	 */
-	function register_routes( array $routes, $priority = 10, array $query_vars = null ){
+	function add_routes( array $routes, $priority = 10, array $query_vars = null ){
 		
 		if ( is_array($query_vars) )
 			\Phpf\Routes\Router::instance()->addVars($query_vars);
@@ -49,7 +35,7 @@ namespace {
 	*/
 	function get_routes_where( array $args, $operator = 'AND', $key_exists_only = false ){
 		
-		$routes = Phpf\Routes\Router::instance()->getRoutes();
+		$routes = \Phpf\Routes\Router::instance()->getRoutes();
 		
 		if ( isset($args['priority']) ){
 			
@@ -73,6 +59,20 @@ namespace {
 		}
 		
 		return $matched;
+	}
+	
+	/**
+	 * Register a Phpf\Routes\Controller instance.
+	 */
+	function set_controller( $id, \Phpf\Routes\Controller $object ){
+		\Phpf\Util\Registry::set('controller.'.$id, $object);
+	}
+	
+	/**
+	 * Returns a registered Phpf\Routes\Controller instance.
+	 */
+	function get_controller( $id ){
+		return \Phpf\Util\Registry::get('controller.'.$id);
 	}
 	
 }
