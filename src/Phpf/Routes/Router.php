@@ -83,8 +83,9 @@ class Router implements Singleton, iEventable
 				
 			} catch (\Phpf\Util\Reflection\Exception\MissingParam $e) {
 				
-				$exception = new Exception\MissingRouteParameter;
-				$exception->setMissingParameter($e->getMissingParam());
+				$msg = str_replace('reflection', 'required route', $e->getMessage());
+				
+				$exception = new Exception\MissingParam($msg);
 				
 				$this->error(404, $exception, $this->route);
 			}

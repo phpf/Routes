@@ -28,20 +28,16 @@ class HttpMethodNotAllowed extends \RuntimeException {
 		
 		return implode(', ', $this->getAllowedMethods());
 	}
-	
-	public function getMessage(){
+		
+	public function __toString(){
 			
-		$msg = "HTTP method $this->getRequestedMethod() is not permitted for this route. ";
+		$msg = "HTTP method {$this->getRequestedMethod()} is not permitted for this route. ";
 		
 		if ( isset($this->allowed_methods) ){
 			$msg .= "\nAllowed methods for this route: " . $this->getAllowedMethodsString();
 		}
 		
 		return $msg;
-	}
-	
-	public function __toString(){
-		return $this->getMessage();
 	}
 	
 }

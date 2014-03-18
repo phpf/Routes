@@ -2,7 +2,7 @@
 
 namespace Phpf\Routes\Exception;
 
-class MissingRouteParameter extends \RuntimeException 
+class MissingParam extends \RuntimeException 
 {
 	
 	public function setMissingParameter( $param ){
@@ -14,12 +14,8 @@ class MissingRouteParameter extends \RuntimeException
 		return isset($this->missing_parameter) ? $this->missing_parameter : null;
 	}
 	
-	public function getMessage(){
-		return "Missing required route parameter $this->getMissingParameter().";
-	}
-	
 	public function __toString(){
-		return $this->getMessage();
+		return "Missing required route parameter $this->getMissingParameter().";
 	}
 	
 }
