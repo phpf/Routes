@@ -27,7 +27,6 @@ Now, define some routes. There are two ways to define routes:
  2. Under endpoints (or route namespaces) - endpoint routes are created and parsed only if the request matches the endpoint. This reduces the required parsing (and therefore, time) considerably.
 
 ####Normal
-Using the `addRoute()` method is simple:
 ```php
 // Add a route at '/login/' that calls App\UserController::login() for GET and POST requests
 $router->addRoute('login', array(
@@ -59,7 +58,7 @@ $router->endpoint('admin', function ($router) {
 
 This would register the routes `admin/users`, `admin/pages`, and `admin/options`. 
 
-That was a bit repetitive - to simplify, you can set a controller to use for all routes under an endpoint like so:
+That was a bit repetitive - to simplify, you can set a controller to use for all routes under an endpoint:
 ```php
 $router->endpoint('admin', function ($router) {
 	
@@ -102,8 +101,8 @@ To route/dispatch the request, pass the `Phpf\Http\Request` and `Phpf\Http\Respo
 ```php
 use Phpf\Http\Request;
 use Phpf\Http\Response;
-
-$router->dispatch(new Request, new Response);
+$request = new Request;
+$router->dispatch($request, new Response($request));
 ```
 
 ##Route Parameters
