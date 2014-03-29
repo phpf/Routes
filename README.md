@@ -97,6 +97,15 @@ Note, however, you can't change the HTTP methods using this last way.
 ###Controllers not called statically
 We have defined our route callbacks using strings for the class. However, they are not called statically; if the matched route callback uses a string as the first element, the router will attempt to instantiate this class before calling the method. This way, controller callbacks are run in an object context, but the objects do not have to be instantiated unless needed.
 
+### Dispatching
+To route/dispatch the request, pass the `Phpf\Http\Request` and `Phpf\Http\Response` objects to the router's `dispatch()` method:
+```php
+use Phpf\Http\Request;
+use Phpf\Http\Response;
+
+$router->dispatch(new Request, new Response);
+```
+
 ##Route Parameters
 
 Route parameters can be defined two ways:
