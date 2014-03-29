@@ -13,15 +13,13 @@ Request routing component.
 
 ## Basic Usage
 
-First, initialize the router. The constructor takes one parameter, the `Phpf\Event\Container` object.
+The router's constructor takes one parameter, a `Phpf\Event\Container` object. Events are triggered before and after the dispatch process, and are also used for errors.
 ```php
 use Phpf\Routes\Router;
-
 $events = new Phpf\Event\Container;
-
 $router = new Router($events);
 ```
-Now, define some routes. There are two ways to define routes:
+There are two ways to define routes:
 
  1. The "normal" way - pass an array to the `addRoute()` method and a route is created.
  2. Under endpoints (or route namespaces) - endpoint routes are created and parsed only if the request matches the endpoint. This reduces the required parsing (and therefore, time) considerably.
@@ -149,7 +147,7 @@ $router->addRoute('users/<user_id:int>/posts/<year:[\d]{4}>', array(
 
 // In App\UserController class:
 
-public function getYearPosts($user_id, $year) {
+public function getYearPosts($year, $user_id) {
 	// ...
 }
 ```
