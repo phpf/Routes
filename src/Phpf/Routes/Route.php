@@ -9,13 +9,25 @@ use Phpf\Http\Http;
 
 class Route {
 	
+	/**
+	 * @var string
+	 */
 	public $uri;
 	
-	public $methods = array();
+	/**
+	 * @var array
+	 */
+	public $methods;
 	
+	/**
+	 * @var callable
+	 */
 	public $callback;
 	
-	public $init_on_match = true;
+	/**
+	 * @var boolean
+	 */
+	public $init_on_match;
 	
 	public static $default_methods = array(
 		Http::METHOD_GET, 
@@ -31,11 +43,16 @@ class Route {
 			$this->$k = $v;	
 		}
 		
-		if ( empty($this->methods) )
+		if (empty($this->methods)) {
 			$this->methods = self::$default_methods;
+		}
 		
 		// Change to keys to use isset() instead of in_array()
 		$this->methods = array_fill_keys($this->methods, true);
+		
+		if (! isset($this->init_on_match)) {
+			$this->init_on_match = true;
+		}
 	}
 	
 	public function getUri(){
@@ -63,11 +80,17 @@ class Route {
 		// Instantiate the controller on route match.
 		// This means don't have to create a bunch of objects
 		// in order to receive the request in object context.
-		if ( $this->init_on_match && is_array($this->callback) 
-			&& isset($this->action) && isset($this->controller) ) 
-		{
-			$class = $this->controller;	
-			$this->callback[0] = new $class();
+		if ($this->init_on_match && isset($this->controller)) {
+			
+			$class = $this->controller;
+			
+			if (isset($this->action)) {
+				$this->callback = array(new $class(), $this->action);
+			} elseif (isset($this->callback) && is_string($this->callback)) {
+				$this->callback = array(new $class(), $this->callback);
+			} else {
+				throw new \RuntimeException("Cannot create callback.");
+			}
 			
 			if ( isset($this->endpoint) ){
 				$name = $this->endpoint;

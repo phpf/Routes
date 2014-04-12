@@ -18,8 +18,9 @@ namespace {
 	 */
 	function add_routes( array $routes, $priority = 10, array $query_vars = null ){
 		
-		if ( is_array($query_vars) )
+		if (! empty($query_vars)) {
 			\Phpf\Routes\Router::instance()->addVars($query_vars);
+		}
 		
 		\Phpf\Routes\Router::instance()->addRoutes($routes, $priority);
 	}
