@@ -13,12 +13,11 @@
 	],
 	"require": {
 		"php": ">=5.3",
-		"phpf/util": "dev-master",
-		"phpf/http": "dev-master"
+		"phpf/util": "dev-master"
 	},
 	"autoload": {
 		"psr-0": {
-			"Phpf\\Routes\\": "src/"
+			"Phpf\\Route\\": "src/"
 		}
 	},
 	"minimum-stability": "dev"
