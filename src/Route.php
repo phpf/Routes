@@ -2,13 +2,10 @@
 
 namespace Phpf\Route;
 
-use Serializable;
-use RuntimeException;
-
 /**
  * Routes represent a single URI.
  */
-class Route implements Serializable
+class Route implements \Serializable
 {
 	/**
 	 * URI path.
@@ -59,12 +56,6 @@ class Route implements Serializable
 	protected $uri_vars;
 	
 	/**
-	 * Whether to instantiate the controller class on match.
-	 * @var boolean
-	 */
-	protected $initControllerOnMatch = true;
-	
-	/**
 	 * Default HTTP methods.
 	 * @var array
 	 */
@@ -74,24 +65,29 @@ class Route implements Serializable
 	 * Construct route with URI, callback/action, and accepted HTTP methods.
 	 *
 	 * @param string $uri Route URI
-	 * @param mixed $action_callback Action or callback to run when route is invoked.
+	 * @param mixed $controller_action Array of controller (object or classname) and action, 
+	 * the action name (string), or the controller object.
 	 * @param array $methods Accepted HTTP methods for this route.
 	 */
-	public function __construct($uri, $action_callback, array $methods) {
+	public function __construct($uri, $controller_action, array $methods) {
 
 		$this->uri = $uri;
-		// use isset()
+		
 		$this->methods = array_combine($methods, $methods);
 
-		if (is_array($action_callback)) {
-			if (is_object($action_callback[0])) {
-				$this->callback = $action_callback;
-			} else {
-				$this->controller = $action_callback[0];
-				isset($action_callback[1]) and $this->action = $action_callback[1];
-			}
-		} else if (is_string($action_callback)) {
-			$this->action = $action_callback;
+		if (is_array($controller_action)) {
+				
+			$this->controller = $controller_action[0];
+			
+			isset($controller_action[1]) and $this->action = $controller_action[1];
+			
+		} else if (is_string($controller_action)) {
+			
+			$this->action = $controller_action;
+		
+		} else if (is_object($controller_action)) {
+		
+			$this->controller = $controller_action;
 		}
 	}
 
@@ -110,8 +106,9 @@ class Route implements Serializable
 	 * @param string $str Parsed route.
 	 * @return $this
 	 */
-	public function setParsedUri($str) {
+	public function setParsedUri($str, array $vars = array()) {
 		$this->parsed_uri = $str;
+		$this->uri_vars = $vars;
 		return $this;
 	}
 	
@@ -186,23 +183,6 @@ class Route implements Serializable
 	}
 
 	/**
-	 * Sets or gets whether to initialize the controller on match.
-	 *
-	 * If true, a new instance of the controler class will be created
-	 * when the route is matched to the request URI.
-	 *
-	 * @param null|boolean $newval New value to set, or null to return current value.
-	 * @return boolean True if the route's controller is instantiated on match,
-	 * otherwise false.
-	 */
-	public function initControllerOnMatch($newval = null) {
-		if (isset($newval)) {
-			$this->initControllerOnMatch = (bool)$newval;
-		}
-		return $this->initControllerOnMatch;
-	}
-
-	/**
 	 * Sets the route controller.
 	 *
 	 * Controller can be a string (if controller is initialized on match - {@see
@@ -212,11 +192,7 @@ class Route implements Serializable
 	 * @return $this
 	 */
 	public function setController($controller) {
-		if (is_string($controller)) {
-			$this->controller = $controller;
-		} else if (is_object($controller)) {
-			$this->callback[0] = $controller;
-		}
+		$this->controller = $controller;
 		return $this;
 	}
 	
@@ -244,59 +220,45 @@ class Route implements Serializable
 	public function getCallback() {
 		static $built;
 
-		if (true === $built)
+		if (true === $built) {
 			return $this->callback;
-
-		// Instantiate controller on route match (first time method is called)
-		if ($this->initControllerOnMatch) {
-
-			$class = $action = $object = false;
-
-			if (isset($this->controller)) {
-				$class = $this->controller;
-			}
-			if (isset($this->action)) {
-				$action = $this->action;
-			}
-
-			if (! $class || ! $action) {
-				if (! isset($this->callback) || ! is_callable($this->callback, true)) {
-					throw new RuntimeException("Cannot create callback - insufficient information.");
-				}
-				$cb = $this->callback;
-				
-				if (is_array($cb)) {
-					if (is_string($cb[0]))
-						$class = $cb[0];
-					else if (is_object($cb[0]))
-						$object = &$this->callback[0];
-					if (isset($cb[1]))
-						$action = $cb[1];
-				} else if (is_object($cb)) {
-					$object =& $this->callback;
-				} else if (is_string($cb)) {
-					$action = $cb;
-				}
-			}
-
-			if (! $object) {
-				if (! $class) {
-					throw new RuntimeException("Cannot create callback - no controller object specified.");
-				}
-				$object = new $class;
-			}
-
-			if (! $action) {
-				if (! method_exists($object, '__invoke')) {
-					throw new RuntimeException("Cannot create callback - no controller action specified.");
-				}
-				$action = '__invoke';
-			}
-
-			$this->callback = array($object, $action);
-
-			$built = true;
 		}
+		
+		$class = $action = $object = false;
+
+		if (isset($this->controller)) {
+			if (is_string($this->controller)) {
+				$class = $this->controller;
+			} else if (is_object($this->controller)) {
+				$object =& $this->controller;
+			}
+		}
+		
+		if (isset($this->action)) {
+			$action = $this->action;
+		}
+
+		if (! $object) {
+			
+			if (! $class) {
+				throw new \RuntimeException("Cannot create callback - no controller object specified.");
+			}
+			
+			$object = new $class;
+		}
+
+		if (! $action) {
+			
+			if (! method_exists($object, '__invoke')) {
+				throw new \RuntimeException("Cannot create callback - no controller action specified.");
+			}
+			
+			$action = '__invoke';
+		}
+
+		$this->callback = array($object, $action);
+
+		$built = true;
 
 		return $this->callback;
 	}

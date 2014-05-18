@@ -2,7 +2,6 @@
 
 namespace Phpf\Route;
 
-use Phpf\Reflection\Callback;
 use Closure;
 
 /**
@@ -35,6 +34,12 @@ class Router
 	protected $events;
 	
 	/**
+	 * Fluent interface for adding routes.
+	 * @var \Phpf\Route\Fluent
+	 */
+	protected $fluent_interface;
+	
+	/**
 	 * Route objects.
 	 * @var array
 	 */
@@ -53,10 +58,10 @@ class Router
 	protected $vars = array(
 		'segment'	=> '([^_/][^/]+)', 
 		'words'		=> '(\w\-+)', 
-		'int'		=> '(\d+)',
+		'integer'	=> '(\d+)',
 		'float'		=> '(\d?\.\d+)',
-		'str'		=> '(.+?)', 
-		'any'		=> '(.?.+?)', 
+		'string'	=> '(.+?)', 
+		'wild'		=> '(.?.+?)', 
 	);
 	
 	/**
@@ -154,47 +159,19 @@ class Router
 		
 		return $this;
 	}
-
-	/** 
-	 * &Alias of addRoute() 
+	
+	/**
+	 * Returns the fluent interface for adding routes.
+	 * 
+	 * @return \Phpf\Route\Fluent Fluent interface instance.
 	 */
-	public function add($uri, $action_cb, array $methods = array('GET','HEAD','POST'), $priority = 10) {
-		return $this->addRoute($uri, $action_cb, $methods, $priority);
+	public function fluent() {
+		if (! isset($this->fluent_interface)) {
+			$this->fluent_interface = new Fluent($this);
+		}
+		return $this->fluent_interface;
 	}
-	
-	public function addGet($uri, $action_cb, $priority = 10) {
-		return $this->addRoute($uri, $action_cb, array('GET'), $priority);
-	}
-	
-	public function addPost($uri, $action_cb, $priority = 10) {
-		return $this->addRoute($uri, $action_cb, array('POST'), $priority);
-	}
-	
-	public function addHead($uri, $action_cb, $priority = 10) {
-		return $this->addRoute($uri, $action_cb, array('HEAD'), $priority);
-	}
-	
-	public function addPut($uri, $action_cb, $priority = 10) {
-		return $this->addRoute($uri, $action_cb, array('PUT'), $priority);
-	}
-	
-	public function addPatch($uri, $action_cb, $priority = 10) {
-		return $this->addRoute($uri, $action_cb, array('PATCH'), $priority);
-	}
-	
-	public function addDelete($uri, $action_cb, $priority = 10) {
-		return $this->addRoute($uri, $action_cb, array('DELETE'), $priority);
-	}
-	
-	public function addOptions($uri, $action_cb, $priority = 10) {
-		return $this->addRoute($uri, $action_cb, array('OPTIONS'), $priority);
-	}
-	
-	public function addAll($uri, $action_cb, $priority = 10) {
-		$methods = array('GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS');
-		return $this->addRoute($uri, $action_cb, $methods, $priority);
-	}
-	
+
 	/**
 	 * Add a group of routes under an endpoint/namespace
 	 * 
@@ -254,21 +231,18 @@ class Router
 				$this->doEndpoint($path, $closure);
 			}
 		}
-		
 		$didEndpoints = true;
 		
 		// parse every route and add its (parsed) URI and vars as properties
 		foreach($this->routes as &$group) {
 			foreach($group as &$route) {
 				if (null === $route_uri = $route->getParsedUri()) {
-					$qvs = array();
-					$parsed = $this->parseRoute($route->uri, $qvs);
-					$route->setParsedUri($parsed);
-					$route->setVars($qvs);
+					$vars = array(); // reset
+					$parsed = $this->parseRoute($route->uri, $vars);
+					$route->setParsedUri($parsed, $vars);
 				}
 			}
 		}
-		
 		$didParse = true;
 		
 		return $this->routes;
@@ -315,7 +289,6 @@ class Router
 		}
 		
 		$callback = array($array['controller'], $array['action']);
-		
 		$methods = isset($array['methods']) ? $array['methods'] : array('GET','HEAD');
 		
 		if (! isset($this->routes[$basepath])) {
@@ -345,15 +318,15 @@ class Router
 			// check for endpoint match
 			if (0 === stripos($uri, $path)) {
 				
-				// If no routes were added, carry on
-				if (! $this->doEndpoint($path, $closure, $returned)) {
-					continue; 
-				}
+				$routes_added = $this->doEndpoint($path, $closure, $returned);
 				
-				// If an object was returned, stop routing and return it.
 				if (! empty($returned) && is_object($returned)) {
+					// If an object was returned, stop routing and return it.
 					$this->route = $returned;
 					return true;
+				} else if (! $routes_added) {
+					// If no routes were added, move to next endpoint
+					continue;
 				}
 				
 				// iterate through the endpoint's routes and try to match
@@ -362,7 +335,6 @@ class Router
 						return true;
 					}
 				}
-				
 			}
 		}
 
@@ -438,10 +410,8 @@ class Router
 		
 		// parse if unparsed
 		if (null === $route_uri = $route->getParsedUri()) {
-			$qvs = array();
-			$route_uri = $this->parseRoute($route->uri, $qvs);
-			$route->setParsedUri($route_uri);
-			$route->setVars($qvs);
+			$route_uri = $this->parseRoute($route->uri, $vars);
+			$route->setParsedUri($route_uri, $vars);
 		}
 		
 		if (preg_match('#^/?'.$route_uri.'/?$#i', $uri, $params)) {
@@ -479,7 +449,11 @@ class Router
 	 * @param array &$vars Associative array of vars parsed from URI.
 	 * @return string URI with var placeholders replaced with their corresponding regex.
 	 */
-	protected function parseRoute($uri, array &$vars) {
+	protected function parseRoute($uri, array &$vars = null) {
+		
+		if (! isset($vars)) {
+			$vars = array();
+		}
 		
 		if (preg_match_all('/<(\w+)(\:.+?)?>/', $uri, $route_vars)) {
 			
