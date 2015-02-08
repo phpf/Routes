@@ -1,282 +1,253 @@
 <?php
 
-namespace Phpf\Route;
+namespace xpl\Routing;
 
 /**
- * Routes represent a single URI.
+ * Route represents a request destination.
  */
-class Route implements \Serializable
+class Route implements RouteInterface
 {
+	
 	/**
-	 * URI path.
 	 * @var string
 	 */
-	public $uri;
-
+	protected $name;
+	
 	/**
-	 * HTTP methods accepted.
-	 * @var array
-	 */
-	public $methods;
-
-	/**
-	 * Array callable with object when built.
-	 * @var callable
-	 */
-	protected $callback;
-
-	/**
-	 * Controller class name.
 	 * @var string
 	 */
-	protected $controller;
-
+	protected $method;
+	
 	/**
-	 * Controller method name.
+	 * @var string
+	 */
+	protected $uri;
+	
+	/**
 	 * @var string
 	 */
 	protected $action;
 	
 	/**
-	 * Matched route variables from request URI.
+	 * @var string
+	 */
+	protected $compiled_uri;
+	
+	/**
 	 * @var array
 	 */
 	protected $params;
 	
 	/**
-	 * The URI with var placeholders replaced with regex.
-	 * @var string
-	 */
-	protected $parsed_uri;
-	
-	/**
-	 * Indexed array of variable names from the parsed URI.
 	 * @var array
 	 */
-	protected $uri_vars;
+	protected $tokens;
 	
 	/**
-	 * Default HTTP methods.
-	 * @var array
+	 * Constructor.
+	 * 
+	 * @param string $name Route name.
+	 * @param string $method HTTP method allowed.
+	 * @param string $uri Route URI path (unparsed).
+	 * @param string $action [Optional] Route action. Default is value of name.
 	 */
-	public static $defaultMethods = array('GET', 'POST', 'HEAD', );
-
-	/**
-	 * Construct route with URI, callback/action, and accepted HTTP methods.
-	 *
-	 * @param string $uri Route URI
-	 * @param mixed $controller_action Array of controller (object or classname) and action, 
-	 * the action name (string), or the controller object.
-	 * @param array $methods Accepted HTTP methods for this route.
-	 */
-	public function __construct($uri, $controller_action, array $methods) {
-
-		$this->uri = $uri;
-		
-		$this->methods = array_combine($methods, $methods);
-
-		if (is_array($controller_action)) {
-				
-			$this->controller = $controller_action[0];
-			
-			isset($controller_action[1]) and $this->action = $controller_action[1];
-			
-		} else if (is_string($controller_action)) {
-			
-			$this->action = $controller_action;
-		
-		} else if (is_object($controller_action)) {
-		
-			$this->controller = $controller_action;
-		}
+	public function __construct($name, $method, $uri, $action = null) {
+		$this->name = $name;
+		$this->method = strtoupper($method);
+		$this->uri = '/'.trim($uri, '/');
+		$this->action = empty($action) ? $this->name : $action;
+		$this->params = array();
 	}
-
+	
 	/**
-	 * Returns the route URI.
-	 *
-	 * @return string URI path.
+	 * Method used for identifying a route by string.
+	 * 
+	 * Default implementation uses "$this->action".
+	 * 
+	 * @return string
+	 */
+	public function getID() {
+		return $this->action;
+	}
+	
+	/**
+	 * Returns the route's name.
+	 * 
+	 * @return string
+	 */
+	public function getName() {
+		return $this->name;
+	}
+	
+	/**
+	 * Returns the route's HTTP method.
+	 * 
+	 * @return string
+	 */
+	public function getMethod() {
+		return $this->method;
+	}
+	
+	/**
+	 * Returns the URI (raw, including params like "{param}").
+	 * 
+	 * @return string
 	 */
 	public function getUri() {
 		return $this->uri;
 	}
 	
 	/**
-	 * Sets the parsed URI, with regex in place of var placeholders.
+	 * Returns the route action.
 	 * 
-	 * @param string $str Parsed route.
-	 * @return $this
+	 * @return string
 	 */
-	public function setParsedUri($str, array $vars = array()) {
-		$this->parsed_uri = $str;
-		$this->uri_vars = $vars;
-		return $this;
+	public function getAction() {
+		return $this->action;
 	}
 	
 	/**
-	 * Returns the parsed route if set.
+	 * Sets the route action (overwrites constructor argument).
 	 * 
-	 * @return string|null Parsed route if set, otherwise null.
+	 * @param mixed $action
 	 */
-	public function getParsedUri() {
-		return isset($this->parsed_uri) ? $this->parsed_uri : null;
+	public function setAction($action) {
+		$this->action = $action;
 	}
 	
 	/**
-	 * Sets the route vars, likely from parsing.
+	 * Sets the compiled route URI.
 	 * 
-	 * @param array Indexed array of route vars.
-	 * @return $this
+	 * Called from Compiler.
+	 * 
+	 * @param string $uri Compiled URI.
 	 */
-	public function setVars(array $vars) {
-		$this->uri_vars = $vars;
-		return $this;
+	public function setCompiledUri($uri) {
+		$this->compiled_uri = $uri;
 	}
 	
 	/**
-	 * Returns an array of the route vars.
+	 * Returns the compiled URI, if set.
 	 * 
-	 * @return array Indexed array of route vars.
+	 * @return string|null
 	 */
-	public function getVars() {
-		return $this->uri_vars;
+	public function getCompiledUri() {
+		return isset($this->compiled_uri) ? $this->compiled_uri : null;
 	}
 	
 	/**
-	 * Returns allowed HTTP methods.
-	 *
-	 * @return array Array of allowed HTTP methods.
+	 * Checks whether the route URI has been compiled.
+	 * 
+	 * @return boolean
 	 */
-	public function getMethods() {
-		return $this->methods;
-	}
-
-	/**
-	 * Returns whether a given HTTP method is allowed.
-	 *
-	 * @param string $method Uppercase name of HTTP method.
-	 * @return boolean True if method allowed, otherwise false.
-	 */
-	public function isMethodAllowed($method) {
-		return isset($this->methods[$method]);
+	public function isCompiled() {
+		return isset($this->compiled_uri);
 	}
 	
 	/**
-	 * Sets an associative array of route parameters from the matched request URI.
+	 * Sets the route's URI tokens.
 	 * 
-	 * @param array $params Indexed array of path parameters.
-	 * @return $this
+	 * @param array $tokens
 	 */
-	public function setParams(array $params) {
-		if (! empty($this->uri_vars) && ! empty($params)) {
-			$this->params = array_combine($this->uri_vars, $params);
+	public function setTokens(array $tokens = array()) {
+		$this->tokens = $tokens;
+	}
+	
+	/**
+	 * Returns the route's tokens.
+	 * 
+	 * @return array
+	 */
+	public function getTokens() {
+		return $this->tokens;
+	}
+	
+	/**
+	 * Checks whether the route uses a given token.
+	 * 
+	 * @param string $name
+	 */
+	public function hasToken($name) {
+		return isset($this->tokens[$name]);
+	}
+	
+	/**
+	 * Sets the parameters matched from the route tokens.
+	 * 
+	 * Parameters are the route's tokens filled with values.
+	 * 
+	 * @param array $params
+	 */
+	public function setParams(array $params = array()) {
+		if (count($params) === count($this->tokens)) {
+			$this->params = array_combine($this->tokens, $params);
 		}
-		return $this;
 	}
 	
 	/**
-	 * Returns route parameters set from request match.
+	 * Checks whether the route has a given parameter set.
 	 * 
-	 * @return null|array Associative array of parameters if set, otherwise null.
+	 * @param string $token
+	 */
+	public function hasParam($token) {
+		return isset($this->params[$token]);
+	}
+	
+	/**
+	 * Returns the route's parameters.
+	 * 
+	 * @return array
 	 */
 	public function getParams() {
 		return $this->params;
 	}
-
+	
 	/**
-	 * Sets the route controller.
-	 *
-	 * Controller can be a string (if controller is initialized on match - {@see
-	 * initControllerOnMatch()}) or an object.
-	 *
-	 * @param string|object $controller Route controller class or object.
-	 * @return $this
+	 * Returns a parameter value by token name.
+	 * 
+	 * @param string $token Token name.
+	 * @return string Parameter value, if set, otherwise null.
 	 */
-	public function setController($controller) {
-		$this->controller = $controller;
-		return $this;
+	public function getParam($token) {
+		return isset($this->params[$token]) ? $this->params[$token] : null;
 	}
 	
 	/**
-	 * Sets the route "action" - i.e. the controller class method.
+	 * Checks whether the route's tokens have been satisfied.
 	 * 
-	 * @param string $action Callable method of controller.
-	 * @return $this
+	 * @return boolean
 	 */
-	public function setAction($action) {
-		$this->action = $action;
-		return $this;
+	public function isSatisfied() {
+		
+		if (empty($this->tokens)) {
+			return true;
+		}
+		
+		foreach($this->tokens as $token) {
+			if (! isset($this->params[$token])) {
+				return false;
+			}
+		}
+		
+		return true;
 	}
 	
 	/**
-	 * Returns the callback in a callable format.
-	 * 
-	 * Callback is built 1st time called, depending on information provided 
-	 * (e.g. whether an action and/or class/object have been set).
-	 * 
-	 * @return callable Route callback
-	 * 
-	 * @throws RuntimeException if callback cannot be built.
+	 * Implements \Serializable
 	 */
-	public function getCallback() {
-		static $built;
-
-		if (true === $built) {
-			return $this->callback;
-		}
-		
-		$class = $action = $object = false;
-
-		if (isset($this->controller)) {
-			if (is_string($this->controller)) {
-				$class = $this->controller;
-			} else if (is_object($this->controller)) {
-				$object =& $this->controller;
-			}
-		}
-		
-		if (isset($this->action)) {
-			$action = $this->action;
-		}
-
-		if (! $object) {
-			
-			if (! $class) {
-				throw new \RuntimeException("Cannot create callback - no controller object specified.");
-			}
-			
-			$object = new $class;
-		}
-
-		if (! $action) {
-			
-			if (! method_exists($object, '__invoke')) {
-				throw new \RuntimeException("Cannot create callback - no controller action specified.");
-			}
-			
-			$action = '__invoke';
-		}
-
-		$this->callback = array($object, $action);
-
-		$built = true;
-
-		return $this->callback;
-	}
-
 	public function serialize() {
-		
-		$vars = get_object_vars($this);
-		
-		unset($vars['callback']);
-		unset($vars['params']);
-		
-		return serialize($vars);
+		// don't store the parameters if this is the matched route
+		$this->params = array();
+		return serialize(get_object_vars($this));
 	}
 	
+	/**
+	 * Implements \Serializable
+	 */
 	public function unserialize($serial) {
-		foreach(unserialize($serial) as $key => $val) {
-			$this->$key = $val;
+		foreach(unserialize($serial) as $key => $value) {
+			$this->$key = $value;
 		}
 	}
-
+	
 }
